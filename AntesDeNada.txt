@@ -1,1 +1,2 @@
 Que cada uno que vaya a abrir esto tenga instalado el CMake en el ordenador.
+Cada vez que alguien vaya a hacer cambios en el motor, que borre la carpeta build, la cree de nuevo y cambie la ruta del vcpkg del archivo CMakeUserPresets
