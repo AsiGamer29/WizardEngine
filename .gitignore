@@ -3,3 +3,5 @@ build/
 
 # Ignorar vcpkg (toda la carpeta)
 vcpkg/
+
+CMakeUserPresets.json
