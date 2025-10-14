@@ -29,10 +29,14 @@ bool OpenGL::Start()
     // Vertex Shader
     const char* vertexShaderSource = "#version 330 core\n"
         "layout (location = 0) in vec3 aPos;\n"
+        "layout (location = 1) in vec3 aColor;\n"
+        "out vec3 vertexColor;\n"
         "void main()\n"
         "{\n"
-        "   gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);\n"
+        "   gl_Position = vec4(aPos, 1.0);\n"
+        "   vertexColor = aColor;\n"
         "}\0";
+
 
     unsigned int vertexShader;
     vertexShader = glCreateShader(GL_VERTEX_SHADER);
@@ -51,11 +55,13 @@ bool OpenGL::Start()
 
     // Fragment Shader
     const char* fragmentShaderSource = "#version 330 core\n"
+        "in vec3 vertexColor;\n"
         "out vec4 FragColor;\n"
         "void main()\n"
         "{\n"
-        "   FragColor = vec4(0.75f, 0.5f, 0.0f, 1.0f);\n"
+        "   FragColor = vec4(vertexColor, 1.0);\n"
         "}\0";
+
 
     unsigned int fragmentShader;
     fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
@@ -88,12 +94,13 @@ bool OpenGL::Start()
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
-    // Vertex data
+    // Vertex data: posición (x, y, z) + color (r, g, b)
     float vertices[] = {
-        -0.25f, -0.5f, 0.0f,  // Bottom-left
-         0.25f, -0.25f, 0.0f,  // Bottom-right
-        -0.25f,  0.25f, 0.0f,  // Top-left
-         0.25f,  0.5f, 0.0f   // Top-right
+        //    x      y      z      r     g     b
+        -0.50f, -0.5f, 0.0f,   1.0f, 0.0f, 0.0f,   // Bottom-left (rojo)
+         0.50f, 0.5f, 0.0f,  0.0f, 1.0f, 0.0f,   // Bottom-right (verde)
+        -0.50f,  0.5f, 0.0f,  0.0f, 0.0f, 1.0f,   // Top-left (azul)
+         0.50f,  0.5f, 0.0f,   1.0f, 1.0f, 0.0f    // Top-right (amarillo)
     };
 
 
@@ -107,8 +114,14 @@ bool OpenGL::Start()
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
     // Configure vertex attributes
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    // Posición
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
+
+    // Color
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
 
     std::cout << "OpenGL initialized successfully" << std::endl;
 
