@@ -19,6 +19,10 @@ public:
 private:
 	bool Start() override;
 	bool CleanUp() override;
+	void CleanUpSphere();
+	void CleanUpPyramid();
+	void CleanUpCylinder();
+
 	bool Update() override;
 
     // Para la esfera
@@ -28,6 +32,8 @@ private:
 	unsigned int pyramidIndexCount = 0;
 	unsigned int cylinderVAO = 0, cylinderVBO = 0, cylinderEBO = 0;
 	unsigned int cylinderIndexCount = 0;
+
+	void GenerateShape();
 
     void GenerateSphere(float radius, unsigned int stacks, unsigned int slices);
 	void GeneratePyramid(float baseSize, float height);

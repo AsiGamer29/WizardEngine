@@ -1,5 +1,6 @@
 #include "OpenGL.h"
 #include "Application.h"
+#include "Input.h"
 #include <SDL3/SDL.h>
 #include <glad/glad.h>
 #include <glm/glm.hpp>
@@ -139,10 +140,6 @@ bool OpenGL::Start()
 
     std::cout << "OpenGL initialized successfully (3D mode)" << std::endl;
 
-    //GenerateSphere(0.75f, 20, 20); // radio 0.5, 20 stacks, 20 slices
-    //GeneratePyramid(1.0f, 1.0f); // base de 1.0 y altura de 1.0
-    GenerateCylinder(0.5f, 1.5f, 36); // radio, altura, sectores
-
 
 
     return true;
@@ -173,16 +170,30 @@ bool OpenGL::Update()
 
     // ---------- DIBUJAR ----------
     
-    /*esfera
     glBindVertexArray(sphereVAO);
-    glDrawElements(GL_TRIANGLES, sphereIndexCount, GL_UNSIGNED_INT, 0); */
-    //glBindVertexArray(pyramidVAO);
-    //glDrawElements(GL_TRIANGLES, pyramidIndexCount, GL_UNSIGNED_INT, 0);
+    glDrawElements(GL_TRIANGLES, sphereIndexCount, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(pyramidVAO);
+    glDrawElements(GL_TRIANGLES, pyramidIndexCount, GL_UNSIGNED_INT, 0);
     glBindVertexArray(cylinderVAO);
     glDrawElements(GL_TRIANGLES, cylinderIndexCount, GL_UNSIGNED_INT, 0);
 
 
+	GenerateShape();
+
     return true;
+}
+
+void OpenGL::GenerateShape()
+{
+    if (Application::GetInstance().input->GetKey(SDL_SCANCODE_1) == KEY_DOWN){
+        GenerateSphere(0.75f, 20, 20); // radius 0.75, 20 stacks, 20 slices
+    }
+    else if (Application::GetInstance().input->GetKey(SDL_SCANCODE_2) == KEY_DOWN) {
+        GeneratePyramid(1.0f, 1.0f); // base 1.0 and height 1.0
+    }
+    else if (Application::GetInstance().input->GetKey(SDL_SCANCODE_3) == KEY_DOWN) {
+        GenerateCylinder(0.5f, 1.5f, 36); // radius, height, sectors
+    }
 }
 
 void OpenGL::GenerateSphere(float radius, unsigned int stacks, unsigned int slices)
@@ -425,19 +436,6 @@ bool OpenGL::CleanUp()
 {
     std::cout << "Destroying OpenGL Context" << std::endl;
 
-    /*glDeleteVertexArrays(1, &sphereVAO);
-    glDeleteBuffers(1, &sphereVBO);
-    glDeleteBuffers(1, &sphereEBO);*/
-
-    //glDeleteVertexArrays(1, &pyramidVAO);
-    //glDeleteBuffers(1, &pyramidVBO);
-    //glDeleteBuffers(1, &pyramidEBO);
-
-    glDeleteVertexArrays(1, &cylinderVAO);
-    glDeleteBuffers(1, &cylinderVBO);
-    glDeleteBuffers(1, &cylinderEBO);
-
-
     glDeleteProgram(shaderProgram);
 
     if (glContext != nullptr)
@@ -448,3 +446,22 @@ bool OpenGL::CleanUp()
 
     return true;
 }
+
+void OpenGL::CleanUpSphere() {
+    glDeleteVertexArrays(1, &sphereVAO);
+    glDeleteBuffers(1, &sphereVBO);
+    glDeleteBuffers(1, &sphereEBO);
+}
+
+void OpenGL::CleanUpPyramid() {
+    glDeleteVertexArrays(1, &pyramidVAO);
+    glDeleteBuffers(1, &pyramidVBO);
+    glDeleteBuffers(1, &pyramidEBO);
+}
+
+void OpenGL::CleanUpCylinder() {
+    glDeleteVertexArrays(1, &cylinderVAO);
+    glDeleteBuffers(1, &cylinderVBO);
+    glDeleteBuffers(1, &cylinderEBO);
+}
+       

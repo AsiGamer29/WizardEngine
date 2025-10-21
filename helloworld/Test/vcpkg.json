@@ -1,8 +1,9 @@
 {
   "dependencies": [
     "fmt",
-    "sdl3",
     "glad",
-    "glm"
+    "glm",
+    "sdl3",
+    "assimp"
   ]
 }
