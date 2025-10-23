@@ -1,5 +1,6 @@
 #include "OpenGL.h"
 #include "Application.h"
+#include "Input.h"
 #include <SDL3/SDL.h>
 #include <glad/glad.h>
 #include <glm/glm.hpp>
@@ -139,8 +140,8 @@ bool OpenGL::Start()
 
     std::cout << "OpenGL initialized successfully (3D mode)" << std::endl;
 
-    //GenerateSphere(0.75f, 20, 20); // radio 0.5, 20 stacks, 20 slices
-    //GeneratePyramid(1.0f, 1.0f); // base de 1.0 y altura de 1.0
+    GenerateSphere(0.75f, 20, 20); // radio 0.5, 20 stacks, 20 slices
+    GeneratePyramid(1.0f, 1.0f); // base de 1.0 y altura de 1.0
     GenerateCylinder(0.5f, 1.5f, 36); // radio, altura, sectores
 
 
@@ -158,7 +159,6 @@ bool OpenGL::Update()
     model = glm::rotate(model, (float)SDL_GetTicks() / 1000.0f, glm::vec3(0.5f, 1.0f, 0.0f));
 
     glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -3.0f));
-
     glm::mat4 projection = glm::perspective(glm::radians(45.0f),
         800.0f / 600.0f, 0.1f, 100.0f);
 
@@ -171,19 +171,30 @@ bool OpenGL::Update()
     glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
     glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
 
-    // ---------- DIBUJAR ----------
-    
-    /*esfera
-    glBindVertexArray(sphereVAO);
-    glDrawElements(GL_TRIANGLES, sphereIndexCount, GL_UNSIGNED_INT, 0); */
-    //glBindVertexArray(pyramidVAO);
-    //glDrawElements(GL_TRIANGLES, pyramidIndexCount, GL_UNSIGNED_INT, 0);
-    glBindVertexArray(cylinderVAO);
-    glDrawElements(GL_TRIANGLES, cylinderIndexCount, GL_UNSIGNED_INT, 0);
-
+    // ---------- DETECCIÓN DE TECLAS ----------
+    const Uint8* state = reinterpret_cast<const Uint8*>(SDL_GetKeyboardState(NULL));
+  
+    // ---------- DIBUJAR TODAS LAS FIGURAS ACTIVAS ----------
+    if (state[SDL_SCANCODE_1]) {
+        glBindVertexArray(VAO);
+        glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
+    }
+    if (state[SDL_SCANCODE_2]) {
+        glBindVertexArray(sphereVAO);
+        glDrawElements(GL_TRIANGLES, sphereIndexCount, GL_UNSIGNED_INT, 0);
+    }
+    if (state[SDL_SCANCODE_3]) {
+        glBindVertexArray(cylinderVAO);
+        glDrawElements(GL_TRIANGLES, cylinderIndexCount, GL_UNSIGNED_INT, 0);
+    }
+    if (state[SDL_SCANCODE_4]) {
+        glBindVertexArray(pyramidVAO);
+        glDrawElements(GL_TRIANGLES, pyramidIndexCount, GL_UNSIGNED_INT, 0);
+    }
 
     return true;
 }
+
 
 void OpenGL::GenerateSphere(float radius, unsigned int stacks, unsigned int slices)
 {
@@ -425,13 +436,13 @@ bool OpenGL::CleanUp()
 {
     std::cout << "Destroying OpenGL Context" << std::endl;
 
-    /*glDeleteVertexArrays(1, &sphereVAO);
+    glDeleteVertexArrays(1, &sphereVAO);
     glDeleteBuffers(1, &sphereVBO);
-    glDeleteBuffers(1, &sphereEBO);*/
+    glDeleteBuffers(1, &sphereEBO);
 
-    //glDeleteVertexArrays(1, &pyramidVAO);
-    //glDeleteBuffers(1, &pyramidVBO);
-    //glDeleteBuffers(1, &pyramidEBO);
+    glDeleteVertexArrays(1, &pyramidVAO);
+    glDeleteBuffers(1, &pyramidVBO);
+    glDeleteBuffers(1, &pyramidEBO);
 
     glDeleteVertexArrays(1, &cylinderVAO);
     glDeleteBuffers(1, &cylinderVBO);
