@@ -1,26 +1,27 @@
 #include "OpenGL.h"
 #include "Application.h"
-#include "Input.h"
+#include "Shader.h"
 #include <SDL3/SDL.h>
 #include <glad/glad.h>
+#include <iostream>
+#include <IL/il.h>
+#include <IL/ilu.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <iostream>
 
-OpenGL::OpenGL() : glContext(nullptr), shaderProgram(0), VAO(0), VBO(0), EBO(0)
-{
-    std::cout << "OpenGL Constructor" << std::endl;
-}
+#define CHECKERS_WIDTH 64
+#define CHECKERS_HEIGHT 64
+
+OpenGL::OpenGL() : glContext(nullptr), VAO(0), VBO(0), texture(0), shader(nullptr), rotationAngle(0.0f) {}
 
 OpenGL::~OpenGL()
 {
+    if (shader) delete shader;
 }
 
 bool OpenGL::Start()
 {
-    std::cout << "Init OpenGL Context & GLAD" << std::endl;
-
     SDL_Window* window = Application::GetInstance().window->GetWindow();
     glContext = SDL_GL_CreateContext(window);
 
@@ -30,280 +31,64 @@ bool OpenGL::Start()
         return false;
     }
 
+    // Habilitar depth test
     glEnable(GL_DEPTH_TEST);
 
-    // ---------- SHADERS ----------
+    // Inicializar DevIL
+    ilInit();
+    iluInit();
+
+    // Shaders
     const char* vertexShaderSource = "#version 330 core\n"
         "layout (location = 0) in vec3 aPos;\n"
         "layout (location = 1) in vec3 aColor;\n"
-        "out vec3 vertexColor;\n"
+        "layout (location = 2) in vec2 aTexCoord;\n"
+        "out vec3 ourColor;\n"
+        "out vec2 TexCoord;\n"
         "uniform mat4 model;\n"
         "uniform mat4 view;\n"
         "uniform mat4 projection;\n"
         "void main()\n"
         "{\n"
-        "   gl_Position = projection * view * model * vec4(aPos, 1.0);\n"
-        "   vertexColor = aColor;\n"
+        "    gl_Position = projection * view * model * vec4(aPos, 1.0);\n"
+        "    ourColor = aColor;\n"
+        "    TexCoord = aTexCoord;\n"
         "}\0";
 
     const char* fragmentShaderSource = "#version 330 core\n"
-        "in vec3 vertexColor;\n"
         "out vec4 FragColor;\n"
+        "in vec3 ourColor;\n"
+        "in vec2 TexCoord;\n"
+        "uniform sampler2D texture1;\n"
         "void main()\n"
         "{\n"
-        "   FragColor = vec4(vertexColor, 1.0);\n"
+        "    FragColor = texture(texture1, TexCoord) * vec4(ourColor, 1.0);\n"
         "}\0";
 
-    // ---------- COMPILAR SHADERS ----------
-    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
+    shader = new Shader(vertexShaderSource, fragmentShaderSource);
 
-    int success;
-    char infoLog[512];
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-    if (!success)
-    {
-        glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-        std::cerr << "ERROR: Vertex Shader Compilation Failed\n" << infoLog << std::endl;
-    }
-
-    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
-
-    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
-    if (!success)
-    {
-        glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-        std::cerr << "ERROR: Fragment Shader Compilation Failed\n" << infoLog << std::endl;
-    }
-
-    // ---------- LINK ----------
-    shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
-
-    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
-    if (!success)
-    {
-        glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
-        std::cerr << "ERROR: Shader Program Linking Failed\n" << infoLog << std::endl;
-    }
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
-    // ---------- VÉRTICES DEL CUBO ----------
-    float vertices[] = {
-        // posiciones           // colores
-        -0.5f, -0.5f, -0.5f,    1.0f, 0.0f, 0.0f,  // 0
-         0.5f, -0.5f, -0.5f,    0.0f, 1.0f, 0.0f,  // 1
-         0.5f,  0.5f, -0.5f,    0.0f, 0.0f, 1.0f,  // 2
-        -0.5f,  0.5f, -0.5f,    1.0f, 1.0f, 0.0f,  // 3
-        -0.5f, -0.5f,  0.5f,    1.0f, 0.0f, 1.0f,  // 4
-         0.5f, -0.5f,  0.5f,    0.0f, 1.0f, 1.0f,  // 5
-         0.5f,  0.5f,  0.5f,    1.0f, 1.0f, 1.0f,  // 6
-        -0.5f,  0.5f,  0.5f,    0.0f, 0.0f, 0.0f   // 7
-    };
-
-    unsigned int indices[] = {
-        0, 1, 2, 2, 3, 0,   // atrás
-        4, 5, 6, 6, 7, 4,   // frente
-        0, 4, 7, 7, 3, 0,   // izquierda
-        1, 5, 6, 6, 2, 1,   // derecha
-        3, 2, 6, 6, 7, 3,   // arriba
-        0, 1, 5, 5, 4, 0    // abajo
-    };
-
-    // ---------- BUFFERS ----------
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-    glGenBuffers(1, &EBO);
-
-    glBindVertexArray(VAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-
-    // Posición
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    // Color
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    std::cout << "OpenGL initialized successfully (3D mode)" << std::endl;
-
-    GenerateSphere(0.75f, 20, 20); // radio 0.5, 20 stacks, 20 slices
-    GeneratePyramid(1.0f, 1.0f); // base de 1.0 y altura de 1.0
-    GenerateCylinder(0.5f, 1.5f, 36); // radio, altura, sectores
-
-
-
-    return true;
-}
-
-bool OpenGL::Update()
-{
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glUseProgram(shaderProgram);
-
-    // ---------- MATRICES ----------
-    glm::mat4 model = glm::mat4(1.0f);
-    model = glm::rotate(model, (float)SDL_GetTicks() / 1000.0f, glm::vec3(0.5f, 1.0f, 0.0f));
-
-    glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -3.0f));
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f),
-        800.0f / 600.0f, 0.1f, 100.0f);
-
-    // Enviar matrices al shader
-    unsigned int modelLoc = glGetUniformLocation(shaderProgram, "model");
-    unsigned int viewLoc = glGetUniformLocation(shaderProgram, "view");
-    unsigned int projLoc = glGetUniformLocation(shaderProgram, "projection");
-
-    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-    glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
-
-    // ---------- DETECCIÓN DE TECLAS ----------
-    const Uint8* state = reinterpret_cast<const Uint8*>(SDL_GetKeyboardState(NULL));
-  
-    // ---------- DIBUJAR TODAS LAS FIGURAS ACTIVAS ----------
-    if (state[SDL_SCANCODE_1]) {
-        glBindVertexArray(VAO);
-        glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
-    }
-    if (state[SDL_SCANCODE_2]) {
-        glBindVertexArray(sphereVAO);
-        glDrawElements(GL_TRIANGLES, sphereIndexCount, GL_UNSIGNED_INT, 0);
-    }
-    if (state[SDL_SCANCODE_3]) {
-        glBindVertexArray(cylinderVAO);
-        glDrawElements(GL_TRIANGLES, cylinderIndexCount, GL_UNSIGNED_INT, 0);
-    }
-    if (state[SDL_SCANCODE_4]) {
-        glBindVertexArray(pyramidVAO);
-        glDrawElements(GL_TRIANGLES, pyramidIndexCount, GL_UNSIGNED_INT, 0);
-    }
-
-    return true;
-}
-
-
-void OpenGL::GenerateSphere(float radius, unsigned int stacks, unsigned int slices)
-{
-    struct Vertex {
-        glm::vec3 position;
-        glm::vec3 color;
-    };
-
-    std::vector<Vertex> vertices;
-    std::vector<unsigned int> indices;
-
-    // Crear vértices
-    for (unsigned int i = 0; i <= stacks; ++i)
-    {
-        float phi = glm::pi<float>() * float(i) / float(stacks);
-        for (unsigned int j = 0; j <= slices; ++j)
-        {
-            float theta = 2.0f * glm::pi<float>() * float(j) / float(slices);
-
-            Vertex v;
-            v.position.x = radius * sin(phi) * cos(theta);
-            v.position.y = radius * cos(phi);
-            v.position.z = radius * sin(phi) * sin(theta);
-
-            // Color basado en la posición
-            v.color = glm::vec3((v.position.x + radius) / (2 * radius),
-                (v.position.y + radius) / (2 * radius),
-                (v.position.z + radius) / (2 * radius));
-
-            vertices.push_back(v);
-        }
-    }
-
-    // Crear índices
-    for (unsigned int i = 0; i < stacks; ++i)
-    {
-        for (unsigned int j = 0; j < slices; ++j)
-        {
-            unsigned int first = i * (slices + 1) + j;
-            unsigned int second = first + slices + 1;
-
-            indices.push_back(first);
-            indices.push_back(second);
-            indices.push_back(first + 1);
-
-            indices.push_back(second);
-            indices.push_back(second + 1);
-            indices.push_back(first + 1);
-        }
-    }
-
-    sphereIndexCount = indices.size();
-
-    // Crear buffers
-    glGenVertexArrays(1, &sphereVAO);
-    glGenBuffers(1, &sphereVBO);
-    glGenBuffers(1, &sphereEBO);
-
-    glBindVertexArray(sphereVAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, sphereVBO);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sphereEBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
-
-    // Posición
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    // Color
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-    glEnableVertexAttribArray(1);
-
-    glBindVertexArray(0);
-}
-
-void OpenGL::GeneratePyramid(float baseSize, float height)
-{
-    struct Vertex {
-        glm::vec3 position;
-        glm::vec3 color;
-    };
-
-    float half = baseSize / 2.0f;
-
-    std::vector<Vertex> vertices = {
+    float pyramidVertices[] = {
+        // Posición          // Color           // UV
         // Base
-        {{-half, 0.0f, -half}, {1.0f, 0.0f, 0.0f}}, // 0
-        {{ half, 0.0f, -half}, {0.0f, 1.0f, 0.0f}}, // 1
-        {{ half, 0.0f,  half}, {0.0f, 0.0f, 1.0f}}, // 2
-        {{-half, 0.0f,  half}, {1.0f, 1.0f, 0.0f}}, // 3
-        // Punta
-        {{ 0.0f, height, 0.0f}, {1.0f, 0.0f, 1.0f}}  // 4
+        -0.5f, 0.0f, -0.5f,  1,0,0,  0,0,
+         0.5f, 0.0f, -0.5f,  0,1,0,  1,0,
+         0.5f, 0.0f,  0.5f,  0,0,1,  1,1,
+        -0.5f, 0.0f,  0.5f,  1,1,0,  0,1,
+        // Vértice superior
+         0.0f, 0.8f, 0.0f,   1,1,1,  0.5f,0.5f
     };
 
-    std::vector<unsigned int> indices = {
-        // Base (dos triángulos)
+    unsigned int pyramidIndices[] = {
+        // Base (2 triángulos para formar el cuadrado)
         0, 1, 2,
-        2, 3, 0,
-
+        0, 2, 3,
         // Caras laterales
-        0, 1, 4,
-        1, 2, 4,
-        2, 3, 4,
-        3, 0, 4
+        0, 1, 4,  // Frente
+        1, 2, 4,  // Derecha
+        2, 3, 4,  // Atrás
+        3, 0, 4   // Izquierda
     };
 
-    pyramidIndexCount = indices.size();
 
     glGenVertexArrays(1, &pyramidVAO);
     glGenBuffers(1, &pyramidVBO);
@@ -312,150 +97,113 @@ void OpenGL::GeneratePyramid(float baseSize, float height)
     glBindVertexArray(pyramidVAO);
 
     glBindBuffer(GL_ARRAY_BUFFER, pyramidVBO);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(pyramidVertices), pyramidVertices, GL_STATIC_DRAW);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, pyramidEBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(pyramidIndices), pyramidIndices, GL_STATIC_DRAW);
 
     // Posición
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
     // Color
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
+    // UV
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+
     glBindVertexArray(0);
+
+
+    texture = LoadTexture("../Assets/Textures/sigma.jpg");
+
+    return true;
 }
 
-void OpenGL::GenerateCylinder(float radius, float height, int sectors)
+bool OpenGL::Update()
 {
-    struct Vertex {
-        glm::vec3 position;
-        glm::vec3 color;
-    };
+    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    std::vector<Vertex> vertices;
-    std::vector<unsigned int> indices;
+    shader->use();
 
-    float halfHeight = height / 2.0f;
-    float sectorStep = 2 * glm::pi<float>() / sectors;
+    // Rotación continua
+    rotationAngle += 0.01f; // Velocidad de giro
+    glm::mat4 model = glm::rotate(glm::mat4(1.0f), rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.2f, -2.0f));
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
 
-    // Generar los vértices laterales
-    for (int i = 0; i <= sectors; ++i)
-    {
-        float angle = i * sectorStep;
-        float x = radius * cos(angle);
-        float z = radius * sin(angle);
+    glUniformMatrix4fv(glGetUniformLocation(shader->ID, "model"), 1, GL_FALSE, glm::value_ptr(model));
+    glUniformMatrix4fv(glGetUniformLocation(shader->ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(glGetUniformLocation(shader->ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
 
-        glm::vec3 color = {
-            (cos(angle) + 1.0f) * 0.5f,
-            (sin(angle) + 1.0f) * 0.5f,
-            1.0f - fabs(sin(angle))
-        };
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
 
-        // Vértice superior
-        vertices.push_back({ glm::vec3(x, halfHeight, z), color });
-
-        // Vértice inferior
-        vertices.push_back({ glm::vec3(x, -halfHeight, z), color });
-    }
-
-    // Índices para los lados
-    for (int i = 0; i < sectors; ++i)
-    {
-        int top1 = i * 2;
-        int bottom1 = top1 + 1;
-        int top2 = ((i + 1) % (sectors + 1)) * 2;
-        int bottom2 = top2 + 1;
-
-        // Primer triángulo
-        indices.push_back(top1);
-        indices.push_back(bottom1);
-        indices.push_back(top2);
-
-        // Segundo triángulo
-        indices.push_back(bottom1);
-        indices.push_back(bottom2);
-        indices.push_back(top2);
-    }
-
-    // Centro de los discos
-    int topCenterIndex = vertices.size();
-    vertices.push_back({ glm::vec3(0.0f, halfHeight, 0.0f), {1.0f, 1.0f, 1.0f} });
-
-    int bottomCenterIndex = vertices.size();
-    vertices.push_back({ glm::vec3(0.0f, -halfHeight, 0.0f), {0.5f, 0.5f, 0.5f} });
-
-    // Tapa superior
-    for (int i = 0; i < sectors; ++i)
-    {
-        int next = (i + 1) % (sectors + 1);
-        indices.push_back(topCenterIndex);
-        indices.push_back(i * 2);
-        indices.push_back(next * 2);
-    }
-
-    // Tapa inferior
-    for (int i = 0; i < sectors; ++i)
-    {
-        int next = (i + 1) % (sectors + 1);
-        indices.push_back(bottomCenterIndex);
-        indices.push_back(next * 2 + 1);
-        indices.push_back(i * 2 + 1);
-    }
-
-    cylinderIndexCount = indices.size();
-
-    // ---------- BUFFER SETUP ----------
-    glGenVertexArrays(1, &cylinderVAO);
-    glGenBuffers(1, &cylinderVBO);
-    glGenBuffers(1, &cylinderEBO);
-
-    glBindVertexArray(cylinderVAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, cylinderVBO);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cylinderEBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
-
-    // Posición
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    // Color
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-    glEnableVertexAttribArray(1);
-
+    // CORRECCIÓN: Usar pyramidVAO y glDrawElements
+    glBindVertexArray(pyramidVAO);
+    glDrawElements(GL_TRIANGLES, 18, GL_UNSIGNED_INT, 0);  // 18 índices (6 triángulos * 3 vértices)
     glBindVertexArray(0);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return true;
 }
 
+unsigned int OpenGL::LoadTexture(const char* path)
+{
+    ILuint imgID;
+    ilGenImages(1, &imgID);
+    ilBindImage(imgID);
+
+    std::cout << "Intentando cargar: " << path << std::endl;
+
+    if (!ilLoadImage(path)) {
+        ILenum error = ilGetError();
+        std::cerr << "ERROR: No se pudo cargar la imagen. DevIL Code: "
+            << error << " -> " << iluErrorString(error) << std::endl;
+        ilDeleteImages(1, &imgID);
+        return 0;
+    }
+
+    if (!ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE)) {
+        ILenum error = ilGetError();
+        std::cerr << "ERROR: No se pudo convertir la imagen a RGBA: "
+            << iluErrorString(error) << std::endl;
+        ilDeleteImages(1, &imgID);
+        return 0;
+    }
+
+    GLuint texID;
+    glGenTextures(1, &texID);
+    glBindTexture(GL_TEXTURE_2D, texID);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+        ilGetInteger(IL_IMAGE_WIDTH),
+        ilGetInteger(IL_IMAGE_HEIGHT),
+        0, GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    ilDeleteImages(1, &imgID);
+    return texID;
+}
 
 bool OpenGL::CleanUp()
 {
-    std::cout << "Destroying OpenGL Context" << std::endl;
-
-    glDeleteVertexArrays(1, &sphereVAO);
-    glDeleteBuffers(1, &sphereVBO);
-    glDeleteBuffers(1, &sphereEBO);
-
     glDeleteVertexArrays(1, &pyramidVAO);
     glDeleteBuffers(1, &pyramidVBO);
     glDeleteBuffers(1, &pyramidEBO);
+    glDeleteTextures(1, &texture);
 
-    glDeleteVertexArrays(1, &cylinderVAO);
-    glDeleteBuffers(1, &cylinderVBO);
-    glDeleteBuffers(1, &cylinderEBO);
-
-
-    glDeleteProgram(shaderProgram);
-
-    if (glContext != nullptr)
-    {
-        SDL_GL_DestroyContext(glContext);
-        glContext = nullptr;
+    if (shader) {
+        glDeleteProgram(shader->ID);
+        delete shader;
+        shader = nullptr;
     }
 
+    if (glContext) SDL_GL_DestroyContext(glContext);
     return true;
 }

@@ -1,4 +1,5 @@
 #include "Application.h"
+#include "Model.h"
 #include <iostream>
 
 int main(int argc, char* argv[])
@@ -25,6 +26,7 @@ int main(int argc, char* argv[])
     while (app.Update())
     {
         // Application running
+
     }
 
     // Clean up
