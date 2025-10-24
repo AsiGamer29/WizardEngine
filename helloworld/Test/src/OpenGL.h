@@ -8,6 +8,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 struct SDL_Window;
+class Model; // Forward declaration
 
 enum class ShapeType { Cube, Sphere, Cylinder, Pyramid };
 static ShapeType currentShape = ShapeType::Cube;
@@ -15,21 +16,23 @@ static ShapeType currentShape = ShapeType::Cube;
 class OpenGL : public Module
 {
 public:
-    OpenGL();
+    OpenGL();  // Declaración del constructor
     ~OpenGL();
 
     SDL_GLContext glContext;
     Shader* shader = nullptr;
+
     unsigned int VAO;
     unsigned int VBO;
     unsigned int EBO;
     unsigned int texture;
 
-    // Matrices de transformación
-    glm::mat4 model;
+    glm::mat4 modelMatrix;  // Renombrado para evitar conflicto
     glm::mat4 view;
     glm::mat4 projection;
-    float rotationAngle;  // Para la rotación de los objetos
+    float rotationAngle;
+
+    Model* fbxModel = nullptr;
 
 private:
     bool Start() override;
@@ -37,7 +40,6 @@ private:
     void processInput(SDL_Window* window);
     bool Update() override;
 
-    // Objetos adicionales
     unsigned int sphereVAO = 0, sphereVBO = 0, sphereEBO = 0;
     unsigned int sphereIndexCount = 0;
     unsigned int pyramidVAO = 0, pyramidVBO = 0, pyramidEBO = 0;
@@ -45,11 +47,5 @@ private:
     unsigned int cylinderVAO = 0, cylinderVBO = 0, cylinderEBO = 0;
     unsigned int cylinderIndexCount = 0;
 
-    // Generadores de geometría
-    void GenerateSphere(float radius, unsigned int stacks, unsigned int slices);
-    void GeneratePyramid(float baseSize, float height);
-    void GenerateCylinder(float radius, float height, int sectors);
-
-    // Carga de textura
     unsigned int LoadTexture(const char* path);
 };

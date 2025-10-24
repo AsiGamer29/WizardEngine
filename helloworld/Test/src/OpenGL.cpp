@@ -1,23 +1,18 @@
 #include "OpenGL.h"
 #include "Application.h"
-#include "Shader.h"
+#include "Model.h"  // Incluir después de OpenGL.h
 #include <SDL3/SDL.h>
 #include <glad/glad.h>
 #include <iostream>
 #include <IL/il.h>
 #include <IL/ilu.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
 
-#define CHECKERS_WIDTH 64
-#define CHECKERS_HEIGHT 64
-
-OpenGL::OpenGL() : glContext(nullptr), VAO(0), VBO(0), texture(0), shader(nullptr), rotationAngle(0.0f) {}
+OpenGL::OpenGL() : glContext(nullptr), shader(nullptr), fbxModel(nullptr), rotationAngle(0.0f) {}
 
 OpenGL::~OpenGL()
 {
     if (shader) delete shader;
+    if (fbxModel) delete fbxModel;
 }
 
 bool OpenGL::Start()
@@ -31,113 +26,194 @@ bool OpenGL::Start()
         return false;
     }
 
-    // Habilitar depth test
     glEnable(GL_DEPTH_TEST);
 
     // Inicializar DevIL
     ilInit();
     iluInit();
 
-    // === SHADERS SIN COLOR DE VÉRTICES ===
+    // === SHADERS PARA MODELOS 3D ===
     const char* vertexShaderSource = "#version 330 core\n"
         "layout (location = 0) in vec3 aPos;\n"
-        "layout (location = 1) in vec2 aTexCoord;\n"
+        "layout (location = 1) in vec3 aNormal;\n"
+        "layout (location = 2) in vec2 aTexCoord;\n"
         "out vec2 TexCoord;\n"
+        "out vec3 Normal;\n"
+        "out vec3 FragPos;\n"
         "uniform mat4 model;\n"
         "uniform mat4 view;\n"
         "uniform mat4 projection;\n"
         "void main()\n"
         "{\n"
-        "    gl_Position = projection * view * model * vec4(aPos, 1.0);\n"
+        "    FragPos = vec3(model * vec4(aPos, 1.0));\n"
+        "    Normal = mat3(transpose(inverse(model))) * aNormal;\n"
         "    TexCoord = aTexCoord;\n"
+        "    gl_Position = projection * view * vec4(FragPos, 1.0);\n"
         "}\0";
 
     const char* fragmentShaderSource = "#version 330 core\n"
         "out vec4 FragColor;\n"
         "in vec2 TexCoord;\n"
-        "uniform sampler2D texture1;\n"
+        "in vec3 Normal;\n"
+        "in vec3 FragPos;\n"
+        "uniform sampler2D texture_diffuse1;\n"
+        "uniform vec3 lightPos;\n"
+        "uniform vec3 viewPos;\n"
+        "uniform vec3 lightColor;\n"
         "void main()\n"
         "{\n"
-        "    FragColor = texture(texture1, TexCoord);\n"
+        "    float ambientStrength = 0.3;\n"
+        "    vec3 ambient = ambientStrength * lightColor;\n"
+        "    \n"
+        "    vec3 norm = normalize(Normal);\n"
+        "    vec3 lightDir = normalize(lightPos - FragPos);\n"
+        "    float diff = max(dot(norm, lightDir), 0.0);\n"
+        "    vec3 diffuse = diff * lightColor;\n"
+        "    \n"
+        "    float specularStrength = 0.5;\n"
+        "    vec3 viewDir = normalize(viewPos - FragPos);\n"
+        "    vec3 reflectDir = reflect(-lightDir, norm);\n"
+        "    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);\n"
+        "    vec3 specular = specularStrength * spec * lightColor;\n"
+        "    \n"
+        "    vec4 texColor = texture(texture_diffuse1, TexCoord);\n"
+        "    if(texColor.a < 0.1) texColor = vec4(1.0);\n"
+        "    \n"
+        "    vec3 result = (ambient + diffuse + specular) * vec3(texColor);\n"
+        "    FragColor = vec4(result, 1.0);\n"
         "}\0";
 
     shader = new Shader(vertexShaderSource, fragmentShaderSource);
 
-    // === VÉRTICES SIN COLOR ===
-    float pyramidVertices[] = {
-        // Posición         // UV
-        // Base
-        -0.5f, 0.0f, -0.5f,  0.0f, 0.0f,
-         0.5f, 0.0f, -0.5f,  1.0f, 0.0f,
-         0.5f, 0.0f,  0.5f,  1.0f, 1.0f,
-        -0.5f, 0.0f,  0.5f,  0.0f, 1.0f,
-        // Vértice superior
-         0.0f, 0.8f,  0.0f,  0.5f, 0.5f
-    };
+    // Cargar textura
+    texture = LoadTexture("../Assets/Textures/wall.jpg");
 
-    unsigned int pyramidIndices[] = {
-        // Base (2 triángulos)
-        0, 1, 2,
-        0, 2, 3,
-        // Caras laterales
-        0, 1, 4,
-        1, 2, 4,
-        2, 3, 4,
-        3, 0, 4
-    };
-
-    glGenVertexArrays(1, &pyramidVAO);
-    glGenBuffers(1, &pyramidVBO);
-    glGenBuffers(1, &pyramidEBO);
-
-    glBindVertexArray(pyramidVAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, pyramidVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(pyramidVertices), pyramidVertices, GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, pyramidEBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(pyramidIndices), pyramidIndices, GL_STATIC_DRAW);
-
-    // Posición (3 floats)
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    // UV (2 floats)
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    glBindVertexArray(0);
-
-    texture = LoadTexture("../Assets/Textures/sigma.jpg");
+    // Intentar cargar modelo FBX (opcional)
+    try
+    {
+        fbxModel = new Model("../Assets/Models/Skebob.fbx");
+        std::cout << "Modelo FBX cargado correctamente" << std::endl;
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Advertencia: No se pudo cargar modelo FBX: " << e.what() << std::endl;
+        fbxModel = nullptr;
+    }
 
     return true;
 }
 
 bool OpenGL::Update()
 {
-    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+    glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    if (!shader) return true;
 
     shader->use();
 
     // Rotación continua
     rotationAngle += 0.01f;
-    glm::mat4 model = glm::rotate(glm::mat4(1.0f), rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.2f, -2.0f));
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
 
-    glUniformMatrix4fv(glGetUniformLocation(shader->ID, "model"), 1, GL_FALSE, glm::value_ptr(model));
-    glUniformMatrix4fv(glGetUniformLocation(shader->ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
-    glUniformMatrix4fv(glGetUniformLocation(shader->ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+    // Matrices de transformación
+    view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.5f, -3.0f));
+    projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture);
+    // Propiedades de iluminación
+    glm::vec3 lightPos(2.0f, 2.0f, 2.0f);
+    glm::vec3 viewPos(0.0f, 0.0f, 3.0f);
+    glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
 
-    glBindVertexArray(pyramidVAO);
-    glDrawElements(GL_TRIANGLES, 18, GL_UNSIGNED_INT, 0);
-    glBindVertexArray(0);
+    glUniform3fv(glGetUniformLocation(shader->ID, "lightPos"), 1, glm::value_ptr(lightPos));
+    glUniform3fv(glGetUniformLocation(shader->ID, "viewPos"), 1, glm::value_ptr(viewPos));
+    glUniform3fv(glGetUniformLocation(shader->ID, "lightColor"), 1, glm::value_ptr(lightColor));
 
-    glBindTexture(GL_TEXTURE_2D, 0);
+    // Si hay modelo FBX, dibujarlo
+    if (fbxModel)
+    {
+        modelMatrix = glm::mat4(1.0f);
+        modelMatrix = glm::rotate(modelMatrix, rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+        modelMatrix = glm::scale(modelMatrix, glm::vec3(0.5f));
+
+        glUniformMatrix4fv(glGetUniformLocation(shader->ID, "model"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+        glUniformMatrix4fv(glGetUniformLocation(shader->ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(glGetUniformLocation(shader->ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+
+        fbxModel->Draw(*shader);
+    }
+    else
+    {
+        // Si no hay modelo FBX, dibujar forma geométrica
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+
+        modelMatrix = glm::mat4(1.0f);
+        modelMatrix = glm::rotate(modelMatrix, rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+
+        glUniformMatrix4fv(glGetUniformLocation(shader->ID, "model"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+        glUniformMatrix4fv(glGetUniformLocation(shader->ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(glGetUniformLocation(shader->ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+
+        // Dibujar según la forma seleccionada
+        switch (currentShape)
+        {
+        case ShapeType::Pyramid:
+            glBindVertexArray(pyramidVAO);
+            glDrawElements(GL_TRIANGLES, pyramidIndexCount, GL_UNSIGNED_INT, 0);
+            break;
+        case ShapeType::Sphere:
+            glBindVertexArray(sphereVAO);
+            glDrawElements(GL_TRIANGLES, sphereIndexCount, GL_UNSIGNED_INT, 0);
+            break;
+        case ShapeType::Cylinder:
+            glBindVertexArray(cylinderVAO);
+            glDrawElements(GL_TRIANGLES, cylinderIndexCount, GL_UNSIGNED_INT, 0);
+            break;
+        default:
+            glBindVertexArray(VAO);
+            glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
+            break;
+        }
+
+        glBindVertexArray(0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    return true;
+}
+
+bool OpenGL::CleanUp()
+{
+    if (fbxModel)
+    {
+        delete fbxModel;
+        fbxModel = nullptr;
+    }
+
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteVertexArrays(1, &pyramidVAO);
+    glDeleteVertexArrays(1, &sphereVAO);
+    glDeleteVertexArrays(1, &cylinderVAO);
+
+    glDeleteBuffers(1, &VBO);
+    glDeleteBuffers(1, &EBO);
+    glDeleteBuffers(1, &pyramidVBO);
+    glDeleteBuffers(1, &pyramidEBO);
+    glDeleteBuffers(1, &sphereVBO);
+    glDeleteBuffers(1, &sphereEBO);
+    glDeleteBuffers(1, &cylinderVBO);
+    glDeleteBuffers(1, &cylinderEBO);
+
+    glDeleteTextures(1, &texture);
+
+    if (shader)
+    {
+        glDeleteProgram(shader->ID);
+        delete shader;
+        shader = nullptr;
+    }
+
+    if (glContext) SDL_GL_DestroyContext(glContext);
     return true;
 }
 
@@ -149,7 +225,8 @@ unsigned int OpenGL::LoadTexture(const char* path)
 
     std::cout << "Intentando cargar: " << path << std::endl;
 
-    if (!ilLoadImage(path)) {
+    if (!ilLoadImage(path))
+    {
         ILenum error = ilGetError();
         std::cerr << "ERROR: No se pudo cargar la imagen. DevIL Code: "
             << error << " -> " << iluErrorString(error) << std::endl;
@@ -157,7 +234,8 @@ unsigned int OpenGL::LoadTexture(const char* path)
         return 0;
     }
 
-    if (!ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE)) {
+    if (!ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE))
+    {
         ILenum error = ilGetError();
         std::cerr << "ERROR: No se pudo convertir la imagen a RGBA: "
             << iluErrorString(error) << std::endl;
@@ -177,21 +255,4 @@ unsigned int OpenGL::LoadTexture(const char* path)
 
     ilDeleteImages(1, &imgID);
     return texID;
-}
-
-bool OpenGL::CleanUp()
-{
-    glDeleteVertexArrays(1, &pyramidVAO);
-    glDeleteBuffers(1, &pyramidVBO);
-    glDeleteBuffers(1, &pyramidEBO);
-    glDeleteTextures(1, &texture);
-
-    if (shader) {
-        glDeleteProgram(shader->ID);
-        delete shader;
-        shader = nullptr;
-    }
-
-    if (glContext) SDL_GL_DestroyContext(glContext);
-    return true;
 }

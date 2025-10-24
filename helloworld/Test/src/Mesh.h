@@ -45,6 +45,9 @@ public:
     vector<Texture>      textures;
     unsigned int VAO;
 
+    // Transform local del mesh (rellenar desde Model cuando proceses el nodo)
+    glm::mat4 modelMatrix = glm::mat4(1.0f);
+
     // constructor
     Mesh(vector<Vertex> vertices, vector<unsigned int> indices, vector<Texture> textures)
     {
@@ -56,7 +59,7 @@ public:
         setupMesh();
     }
 
-    // render the mesh
+    // render the mesh (NO cambia la uniform 'model', la pone Model::Draw)
     void Draw(Shader& shader)
     {
         // bind appropriate textures
