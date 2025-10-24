@@ -38,12 +38,10 @@ bool OpenGL::Start()
     ilInit();
     iluInit();
 
-    // Shaders
+    // === SHADERS SIN COLOR DE VÉRTICES ===
     const char* vertexShaderSource = "#version 330 core\n"
         "layout (location = 0) in vec3 aPos;\n"
-        "layout (location = 1) in vec3 aColor;\n"
-        "layout (location = 2) in vec2 aTexCoord;\n"
-        "out vec3 ourColor;\n"
+        "layout (location = 1) in vec2 aTexCoord;\n"
         "out vec2 TexCoord;\n"
         "uniform mat4 model;\n"
         "uniform mat4 view;\n"
@@ -51,44 +49,42 @@ bool OpenGL::Start()
         "void main()\n"
         "{\n"
         "    gl_Position = projection * view * model * vec4(aPos, 1.0);\n"
-        "    ourColor = aColor;\n"
         "    TexCoord = aTexCoord;\n"
         "}\0";
 
     const char* fragmentShaderSource = "#version 330 core\n"
         "out vec4 FragColor;\n"
-        "in vec3 ourColor;\n"
         "in vec2 TexCoord;\n"
         "uniform sampler2D texture1;\n"
         "void main()\n"
         "{\n"
-        "    FragColor = texture(texture1, TexCoord) * vec4(ourColor, 1.0);\n"
+        "    FragColor = texture(texture1, TexCoord);\n"
         "}\0";
 
     shader = new Shader(vertexShaderSource, fragmentShaderSource);
 
+    // === VÉRTICES SIN COLOR ===
     float pyramidVertices[] = {
-        // Posición          // Color           // UV
+        // Posición         // UV
         // Base
-        -0.5f, 0.0f, -0.5f,  1,0,0,  0,0,
-         0.5f, 0.0f, -0.5f,  0,1,0,  1,0,
-         0.5f, 0.0f,  0.5f,  0,0,1,  1,1,
-        -0.5f, 0.0f,  0.5f,  1,1,0,  0,1,
+        -0.5f, 0.0f, -0.5f,  0.0f, 0.0f,
+         0.5f, 0.0f, -0.5f,  1.0f, 0.0f,
+         0.5f, 0.0f,  0.5f,  1.0f, 1.0f,
+        -0.5f, 0.0f,  0.5f,  0.0f, 1.0f,
         // Vértice superior
-         0.0f, 0.8f, 0.0f,   1,1,1,  0.5f,0.5f
+         0.0f, 0.8f,  0.0f,  0.5f, 0.5f
     };
 
     unsigned int pyramidIndices[] = {
-        // Base (2 triángulos para formar el cuadrado)
+        // Base (2 triángulos)
         0, 1, 2,
         0, 2, 3,
         // Caras laterales
-        0, 1, 4,  // Frente
-        1, 2, 4,  // Derecha
-        2, 3, 4,  // Atrás
-        3, 0, 4   // Izquierda
+        0, 1, 4,
+        1, 2, 4,
+        2, 3, 4,
+        3, 0, 4
     };
-
 
     glGenVertexArrays(1, &pyramidVAO);
     glGenBuffers(1, &pyramidVBO);
@@ -102,20 +98,15 @@ bool OpenGL::Start()
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, pyramidEBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(pyramidIndices), pyramidIndices, GL_STATIC_DRAW);
 
-    // Posición
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+    // Posición (3 floats)
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
-    // Color
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+    // UV (2 floats)
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
-    // UV
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-
     glBindVertexArray(0);
-
 
     texture = LoadTexture("../Assets/Textures/sigma.jpg");
 
@@ -130,7 +121,7 @@ bool OpenGL::Update()
     shader->use();
 
     // Rotación continua
-    rotationAngle += 0.01f; // Velocidad de giro
+    rotationAngle += 0.01f;
     glm::mat4 model = glm::rotate(glm::mat4(1.0f), rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
     glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.2f, -2.0f));
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
@@ -142,9 +133,8 @@ bool OpenGL::Update()
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture);
 
-    // CORRECCIÓN: Usar pyramidVAO y glDrawElements
     glBindVertexArray(pyramidVAO);
-    glDrawElements(GL_TRIANGLES, 18, GL_UNSIGNED_INT, 0);  // 18 índices (6 triángulos * 3 vértices)
+    glDrawElements(GL_TRIANGLES, 18, GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
 
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -178,10 +168,8 @@ unsigned int OpenGL::LoadTexture(const char* path)
     GLuint texID;
     glGenTextures(1, &texID);
     glBindTexture(GL_TEXTURE_2D, texID);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-        ilGetInteger(IL_IMAGE_WIDTH),
-        ilGetInteger(IL_IMAGE_HEIGHT),
-        0, GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ilGetInteger(IL_IMAGE_WIDTH),
+        ilGetInteger(IL_IMAGE_HEIGHT), 0, GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
     glGenerateMipmap(GL_TEXTURE_2D);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
