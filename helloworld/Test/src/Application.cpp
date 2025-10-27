@@ -1,4 +1,5 @@
 #include "Application.h"
+#include "Camera.h"
 #include <iostream>
 
 Application::Application() : isRunning(true)
@@ -7,6 +8,13 @@ Application::Application() : isRunning(true)
     window = std::make_shared<Window>();
     input = std::make_shared<Input>();
     opengl = std::make_shared<OpenGL>();
+
+    // Crear cámara
+    camera = std::make_shared<Camera>(
+        glm::vec3(0.0f, 0.0f, 5.0f),  // posición inicial
+        glm::vec3(0.0f, 1.0f, 0.0f),  // up
+        -90.0f, 0.0f                   // yaw y pitch
+    );
 
     AddModule(std::static_pointer_cast<Module>(window));
     AddModule(std::static_pointer_cast<Input>(input));
@@ -85,6 +93,13 @@ bool Application::DoUpdate()
         if (!result) {
             break;
         }
+    }
+
+    // Actualizar cámara con Input
+    if (camera && input)
+    {
+        float deltaTime = 0.016f;
+        camera->update(input.get(), deltaTime);
     }
 
     return result;

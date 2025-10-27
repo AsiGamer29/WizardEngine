@@ -8,6 +8,7 @@
 #include "OpenGL.h"
 #include "Model.h"
 #include "Shader.h"
+#include "Camera.h"
 
 class Module;
 
@@ -24,6 +25,7 @@ public:
     std::shared_ptr<Window> window;
     std::shared_ptr<Input> input;
     std::shared_ptr<OpenGL> opengl;
+    std::shared_ptr<Camera> camera;
 
 private:
     Application();

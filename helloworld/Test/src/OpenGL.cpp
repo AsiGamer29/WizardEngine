@@ -91,7 +91,7 @@ bool OpenGL::Start()
     // Intentar cargar modelo FBX (opcional)
     try
     {
-        fbxModel = new Model("../Assets/Models/Skebob.fbx");
+        fbxModel = new Model("../Assets/Models/backpack.fbx");
         std::cout << "Modelo FBX cargado correctamente" << std::endl;
     }
     catch (const std::exception& e)
@@ -112,27 +112,24 @@ bool OpenGL::Update()
 
     shader->use();
 
-    // Rotación continua
-    rotationAngle += 0.01f;
+    Application& app = Application::GetInstance();
 
-    // Matrices de transformación
-    view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.5f, -3.0f));
-    projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
+    // Usar matrices de la cámara
+    view = app.camera->getViewMatrix();
+    projection = app.camera->getProjectionMatrix();
 
-    // Propiedades de iluminación
     glm::vec3 lightPos(2.0f, 2.0f, 2.0f);
-    glm::vec3 viewPos(0.0f, 0.0f, 3.0f);
+    glm::vec3 viewPos = app.camera->getPosition();
     glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
 
     glUniform3fv(glGetUniformLocation(shader->ID, "lightPos"), 1, glm::value_ptr(lightPos));
     glUniform3fv(glGetUniformLocation(shader->ID, "viewPos"), 1, glm::value_ptr(viewPos));
     glUniform3fv(glGetUniformLocation(shader->ID, "lightColor"), 1, glm::value_ptr(lightColor));
 
-    // Si hay modelo FBX, dibujarlo
     if (fbxModel)
     {
         modelMatrix = glm::mat4(1.0f);
-        modelMatrix = glm::rotate(modelMatrix, rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+        modelMatrix = glm::rotate(modelMatrix, rotationAngle, glm::vec3(0, 1, 0));
         modelMatrix = glm::scale(modelMatrix, glm::vec3(0.5f));
 
         glUniformMatrix4fv(glGetUniformLocation(shader->ID, "model"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
@@ -141,46 +138,10 @@ bool OpenGL::Update()
 
         fbxModel->Draw(*shader);
     }
-    else
-    {
-        // Si no hay modelo FBX, dibujar forma geométrica
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, texture);
-
-        modelMatrix = glm::mat4(1.0f);
-        modelMatrix = glm::rotate(modelMatrix, rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
-
-        glUniformMatrix4fv(glGetUniformLocation(shader->ID, "model"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
-        glUniformMatrix4fv(glGetUniformLocation(shader->ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(glGetUniformLocation(shader->ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
-
-        // Dibujar según la forma seleccionada
-        switch (currentShape)
-        {
-        case ShapeType::Pyramid:
-            glBindVertexArray(pyramidVAO);
-            glDrawElements(GL_TRIANGLES, pyramidIndexCount, GL_UNSIGNED_INT, 0);
-            break;
-        case ShapeType::Sphere:
-            glBindVertexArray(sphereVAO);
-            glDrawElements(GL_TRIANGLES, sphereIndexCount, GL_UNSIGNED_INT, 0);
-            break;
-        case ShapeType::Cylinder:
-            glBindVertexArray(cylinderVAO);
-            glDrawElements(GL_TRIANGLES, cylinderIndexCount, GL_UNSIGNED_INT, 0);
-            break;
-        default:
-            glBindVertexArray(VAO);
-            glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
-            break;
-        }
-
-        glBindVertexArray(0);
-        glBindTexture(GL_TEXTURE_2D, 0);
-    }
 
     return true;
 }
+
 
 bool OpenGL::CleanUp()
 {

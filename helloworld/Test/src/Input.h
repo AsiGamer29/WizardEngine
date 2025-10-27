@@ -1,71 +1,58 @@
 #pragma once
 #include "Module.h"
+#include "Window.h"
+#include <SDL3/SDL.h>
 
+#define MAX_KEYS 512
 #define NUM_MOUSE_BUTTONS 5
-
-enum EventWindow
-{
-	WE_QUIT = 0,
-	WE_HIDE = 1,
-	WE_SHOW = 2,
-	WE_COUNT
-};
 
 enum KeyState
 {
-	KEY_IDLE = 0,
-	KEY_DOWN,
-	KEY_REPEAT,
-	KEY_UP
+    KEY_IDLE = 0,
+    KEY_DOWN,
+    KEY_REPEAT,
+    KEY_UP
+};
+
+enum WindowEvent
+{
+    WE_QUIT = 0,
+    WE_HIDE,
+    WE_SHOW,
+    WE_COUNT
 };
 
 class Input : public Module
 {
-
 public:
+    Input();
+    ~Input();
 
-	Input();
+    bool Awake() override;
+    bool Start() override;
+    bool PreUpdate() override;
+    bool CleanUp() override;
 
-	// Destructor
-	~Input();
+    KeyState GetKey(int scancode) const;
+    KeyState GetMouseButton(int id) const;
 
-	// Called before render is available
-	bool Awake() override;
+    SDL_Point GetMouseMotion() const { return SDL_Point{ mouseMotionX, mouseMotionY }; }
+    int GetMouseWheel() const { return mouseWheelY; }
+    int GetMouseX() const { return mouseX; }
+    int GetMouseY() const { return mouseY; }
 
-	// Called before the first frame
-	bool Start() override;
+    bool GetWindowEvent(WindowEvent event) const {
+        if (event < 0 || event >= WE_COUNT) return false;
+        return windowEvents[event];
+    }
 
-	// Called each loop iteration
-	bool PreUpdate() override;
-
-	// Called before quitting
-	bool CleanUp() override;
-
-	// Check key states (includes mouse and joy buttons)
-	KeyState GetKey(int id) const
-	{
-		return keyboard[id];
-	}
-
-	KeyState GetMouseButtonDown(int id) const
-	{
-		return mouseButtons[id - 1];
-	}
-
-	// Check if a certain window event happened
-	bool GetWindowEvent(EventWindow ev);
-
-	// Get mouse / axis position
-	//Vector2D GetMousePosition();
-	//Vector2D GetMouseMotion();
 
 private:
-	bool windowEvents[WE_COUNT];
-	KeyState* keyboard;
-	KeyState mouseButtons[NUM_MOUSE_BUTTONS];
-	int	mouseMotionX;
-	int mouseMotionY;
-	int mouseX;
-	int mouseY;
+    KeyState keyboard[MAX_KEYS];
+    KeyState mouseButtons[NUM_MOUSE_BUTTONS];
+    bool windowEvents[WE_COUNT];
 
+    int mouseX, mouseY;
+    int mouseMotionX, mouseMotionY;
+    int mouseWheelY;
 };
