@@ -21,6 +21,7 @@ private:
     void processKeyboard(Input* input, float deltaTime);
     void processMouseMovement(float xoffset, float yoffset, bool constrainPitch = true);
     void processMouseScroll(float yoffset);
+	void processOrbitMovement(float xoffset, float yoffset);
 
 private:
     glm::vec3 position;

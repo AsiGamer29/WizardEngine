@@ -38,34 +38,42 @@ void Camera::update(Input* input, float deltaTime)
     if (!input) return;
 
     bool rightMouse = input->GetMouseButton(3) == KEY_DOWN || input->GetMouseButton(3) == KEY_REPEAT; // botón derecho
-    bool leftMouse = input->GetMouseButton(1) == KEY_DOWN || input->GetMouseButton(1) == KEY_REPEAT;  // botón izquierdo
-    
-    float currentSpeed;
+    bool leftMouse = input->GetMouseButton(1) == KEY_DOWN || input->GetMouseButton(1) == KEY_REPEAT; // botón izquierdo
+    bool altPressed = input->GetKey(SDL_SCANCODE_LALT) == KEY_DOWN || input->GetKey(SDL_SCANCODE_LALT) == KEY_REPEAT ||
+        input->GetKey(SDL_SCANCODE_RALT) == KEY_DOWN || input->GetKey(SDL_SCANCODE_RALT) == KEY_REPEAT;
 
-	if (input->GetKey(SDL_SCANCODE_LSHIFT) == KEY_REPEAT || input->GetKey(SDL_SCANCODE_RSHIFT) == KEY_REPEAT)
-		currentSpeed = baseMovementSpeed * sprintMultiplier;
-	else
-		currentSpeed = baseMovementSpeed;
+    float currentSpeed = (input->GetKey(SDL_SCANCODE_LSHIFT) == KEY_REPEAT || input->GetKey(SDL_SCANCODE_RSHIFT) == KEY_REPEAT)
+        ? baseMovementSpeed * sprintMultiplier
+        : baseMovementSpeed;
 
     float velocity = currentSpeed * deltaTime;
-
     SDL_Point motion = input->GetMouseMotion();
     int wheel = input->GetMouseWheel();
 
-    // Free look + WASD
-    if (rightMouse)
+    // --- ORBIT ---
+    if (altPressed && leftMouse)
+    {
+        if (!wasLeftMousePressed) {
+            orbitTarget = position + front * orbitDistance; // centra la órbita en lo que mira la cámara
+        }
+        processOrbitMovement(static_cast<float>(motion.x), static_cast<float>(motion.y));
+    }
+
+    // --- FREE LOOK ---
+    else if (rightMouse)
     {
         processMouseMovement(static_cast<float>(motion.x), -static_cast<float>(motion.y));
         processKeyboard(input, velocity);
     }
 
-    // Zoom
+    // --- ZOOM ---
     if (wheel != 0)
         processMouseScroll(static_cast<float>(wheel));
 
     wasRightMousePressed = rightMouse;
     wasLeftMousePressed = leftMouse;
 }
+
 
 void Camera::processKeyboard(Input* input, float velocity)
 {
@@ -95,6 +103,39 @@ void Camera::processMouseMovement(float xoffset, float yoffset, bool constrainPi
 
     updateCameraVectors();
 }
+
+void Camera::processOrbitMovement(float xoffset, float yoffset)
+{
+    // Invertimos el movimiento para que "orbite" de forma natural
+    xoffset *= -mouseSensitivity;
+    yoffset *= -mouseSensitivity;
+
+    // Actualizamos yaw/pitch igual que en free look
+    yaw += xoffset;
+    pitch += yoffset;
+
+    // Limitamos pitch para evitar voltear la cámara
+    if (pitch > 89.0f) pitch = 89.0f;
+    if (pitch < -89.0f) pitch = -89.0f;
+
+    // Calculamos dirección desde yaw/pitch (igual que en updateCameraVectors)
+    glm::vec3 direction;
+    direction.x = cos(glm::radians(pitch)) * cos(glm::radians(yaw));
+    direction.y = sin(glm::radians(pitch));
+    direction.z = cos(glm::radians(pitch)) * sin(glm::radians(yaw));
+
+    // La cámara orbita a una distancia fija del target
+    position = orbitTarget - glm::normalize(direction) * orbitDistance;
+
+    // Mira hacia el target
+    front = glm::normalize(orbitTarget - position);
+
+    // Recalcular ejes
+    right = glm::normalize(glm::cross(front, worldUp));
+    up = glm::normalize(glm::cross(right, front));
+}
+
+
 
 void Camera::processMouseScroll(float yoffset)
 {
