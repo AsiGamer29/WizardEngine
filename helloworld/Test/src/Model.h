@@ -11,6 +11,7 @@
 #include <IL/ilu.h>
 
 #include "Mesh.h"
+#include "Shader.h"
 
 #include <string>
 #include <fstream>
@@ -27,13 +28,13 @@ unsigned int TextureFromFile(const char* path, const string& directory, bool gam
 class Model
 {
 public:
-    // datos del modelo
+    // Datos del modelo
     vector<Texture> textures_loaded;
     vector<Mesh> meshes;
     string directory;
     bool gammaCorrection;
 
-    // Constructor - espera la ruta a un modelo 3D
+    // Constructor
     Model(string const& path, bool gamma = false) : gammaCorrection(gamma)
     {
         loadModel(path);
@@ -47,7 +48,6 @@ public:
     }
 
 private:
-    // Carga un modelo con extensiones soportadas por ASSIMP
     void loadModel(string const& path)
     {
         Assimp::Importer importer;
@@ -57,34 +57,28 @@ private:
             aiProcess_FlipUVs |
             aiProcess_CalcTangentSpace);
 
-        // Verificar errores
         if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
         {
             cout << "ERROR::ASSIMP:: " << importer.GetErrorString() << endl;
             return;
         }
 
-        // Obtener el directorio del archivo
         directory = path.substr(0, path.find_last_of('/'));
 
         cout << "Modelo cargado: " << path << endl;
         cout << "Numero de meshes: " << scene->mNumMeshes << endl;
 
-        // Procesar el nodo raíz de ASSIMP recursivamente
         processNode(scene->mRootNode, scene);
     }
 
-    // Procesa un nodo de forma recursiva
     void processNode(aiNode* node, const aiScene* scene)
     {
-        // Procesar cada mesh en el nodo actual
         for (size_t i = 0; i < node->mNumMeshes; i++)
         {
             aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
             meshes.push_back(processMesh(mesh, scene));
         }
 
-        // Procesar recursivamente los nodos hijos
         for (size_t i = 0; i < node->mNumChildren; i++)
         {
             processNode(node->mChildren[i], scene);
@@ -97,19 +91,16 @@ private:
         vector<unsigned int> indices;
         vector<Texture> textures;
 
-        // Procesar vértices
         for (size_t i = 0; i < mesh->mNumVertices; i++)
         {
             Vertex vertex;
             glm::vec3 vector;
 
-            // Posiciones
             vector.x = mesh->mVertices[i].x;
             vector.y = mesh->mVertices[i].y;
             vector.z = mesh->mVertices[i].z;
             vertex.Position = vector;
 
-            // Normales
             if (mesh->HasNormals())
             {
                 vector.x = mesh->mNormals[i].x;
@@ -122,7 +113,6 @@ private:
                 vertex.Normal = glm::vec3(0.0f, 1.0f, 0.0f);
             }
 
-            // Coordenadas de textura
             if (mesh->mTextureCoords[0])
             {
                 glm::vec2 vec;
@@ -130,7 +120,6 @@ private:
                 vec.y = mesh->mTextureCoords[0][i].y;
                 vertex.TexCoords = vec;
 
-                // Tangente
                 if (mesh->HasTangentsAndBitangents())
                 {
                     vector.x = mesh->mTangents[i].x;
@@ -138,7 +127,6 @@ private:
                     vector.z = mesh->mTangents[i].z;
                     vertex.Tangent = vector;
 
-                    // Bitangente
                     vector.x = mesh->mBitangents[i].x;
                     vector.y = mesh->mBitangents[i].y;
                     vector.z = mesh->mBitangents[i].z;
@@ -157,7 +145,6 @@ private:
                 vertex.Bitangent = glm::vec3(0.0f);
             }
 
-            // Inicializar bone data
             for (int j = 0; j < MAX_BONE_INFLUENCE; j++)
             {
                 vertex.m_BoneIDs[j] = -1;
@@ -167,7 +154,6 @@ private:
             vertices.push_back(vertex);
         }
 
-        // Procesar índices
         for (size_t i = 0; i < mesh->mNumFaces; i++)
         {
             aiFace face = mesh->mFaces[i];
@@ -175,22 +161,17 @@ private:
                 indices.push_back(face.mIndices[j]);
         }
 
-        // Procesar materiales
         aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
 
-        // 1. Mapas difusos
         vector<Texture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse");
         textures.insert(textures.end(), diffuseMaps.begin(), diffuseMaps.end());
 
-        // 2. Mapas especulares
         vector<Texture> specularMaps = loadMaterialTextures(material, aiTextureType_SPECULAR, "texture_specular");
         textures.insert(textures.end(), specularMaps.begin(), specularMaps.end());
 
-        // 3. Mapas normales
         vector<Texture> normalMaps = loadMaterialTextures(material, aiTextureType_HEIGHT, "texture_normal");
         textures.insert(textures.end(), normalMaps.begin(), normalMaps.end());
 
-        // 4. Mapas de altura
         vector<Texture> heightMaps = loadMaterialTextures(material, aiTextureType_AMBIENT, "texture_height");
         textures.insert(textures.end(), heightMaps.begin(), heightMaps.end());
 
@@ -233,33 +214,19 @@ private:
     }
 };
 
-// Implementación inline de TextureFromFile con búsqueda avanzada
+// Función inline de carga de texturas
 inline unsigned int TextureFromFile(const char* path, const string& directory, bool gamma)
 {
     string filename = string(path);
-
-    // Lista de rutas a intentar
     vector<string> pathsToTry;
 
-    // 1. Ruta completa tal cual viene
     pathsToTry.push_back(directory + '/' + filename);
 
-    // 2. Solo el nombre del archivo (sin subdirectorios)
     size_t lastSlash = filename.find_last_of("/\\");
-    string filenameOnly = filename;
-    if (lastSlash != string::npos)
-    {
-        filenameOnly = filename.substr(lastSlash + 1);
-        pathsToTry.push_back(directory + '/' + filenameOnly);
-    }
-
-    // 3. En la misma carpeta Assets, subcarpeta Textures
+    string filenameOnly = (lastSlash != string::npos) ? filename.substr(lastSlash + 1) : filename;
+    pathsToTry.push_back(directory + '/' + filenameOnly);
     pathsToTry.push_back(directory + "/../Textures/" + filenameOnly);
-
-    // 4. Carpeta Textures dentro del directorio del modelo
     pathsToTry.push_back(directory + "/Textures/" + filenameOnly);
-
-    // 5. Directamente en ../Assets/Textures/ (dos niveles arriba)
     pathsToTry.push_back("../Assets/Textures/" + filenameOnly);
 
     ILuint imgID;
@@ -269,16 +236,14 @@ inline unsigned int TextureFromFile(const char* path, const string& directory, b
     bool loaded = false;
     string loadedPath;
 
-    // Intentar cargar de todas las rutas posibles
     for (const auto& tryPath : pathsToTry)
     {
         cout << "Intentando cargar textura: " << tryPath << endl;
-
         if (ilLoadImage(tryPath.c_str()))
         {
             loaded = true;
             loadedPath = tryPath;
-            cout << "  -> Textura encontrada!" << endl;
+            cout << " -> Textura encontrada!" << endl;
             break;
         }
     }
@@ -287,23 +252,17 @@ inline unsigned int TextureFromFile(const char* path, const string& directory, b
     {
         ILenum error = ilGetError();
         cout << "ERROR: No se pudo cargar la textura en ninguna ubicacion" << endl;
-        cout << "Rutas intentadas:" << endl;
-        for (const auto& tryPath : pathsToTry)
-        {
-            cout << "  - " << tryPath << endl;
-        }
+        for (auto& p : pathsToTry) cout << "  - " << p << endl;
         cout << "DevIL Error: " << error << " -> " << iluErrorString(error) << endl;
         ilDeleteImages(1, &imgID);
 
-        // Crear textura magenta para identificar texturas faltantes
         unsigned int textureID;
         glGenTextures(1, &textureID);
         glBindTexture(GL_TEXTURE_2D, textureID);
-        unsigned char magentaPixel[] = { 255, 0, 255, 255 }; // Magenta - fácil de identificar
+        unsigned char magentaPixel[] = { 255, 0, 255, 255 };
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, magentaPixel);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
         return textureID;
     }
 
@@ -320,7 +279,6 @@ inline unsigned int TextureFromFile(const char* path, const string& directory, b
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, magentaPixel);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
         return textureID;
     }
 

@@ -2,6 +2,8 @@
 #include "Module.h"
 #include "Window.h"
 #include <SDL3/SDL.h>
+#include <vector>
+#include <string>
 
 #define MAX_KEYS 512
 #define NUM_MOUSE_BUTTONS 5
@@ -45,6 +47,8 @@ public:
         if (event < 0 || event >= WE_COUNT) return false;
         return windowEvents[event];
     }
+
+    std::vector<std::string> droppedFiles;
 
 
 private:

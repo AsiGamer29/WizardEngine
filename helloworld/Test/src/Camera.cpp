@@ -39,7 +39,6 @@ void Camera::update(Input* input, float deltaTime)
 
     bool rightMouse = input->GetMouseButton(3) == KEY_DOWN || input->GetMouseButton(3) == KEY_REPEAT; // botón derecho
     bool leftMouse = input->GetMouseButton(1) == KEY_DOWN || input->GetMouseButton(1) == KEY_REPEAT;  // botón izquierdo
-    bool altPressed = input->GetKey(SDL_SCANCODE_LALT) == KEY_DOWN || input->GetKey(SDL_SCANCODE_RALT) == KEY_DOWN;
     
     float currentSpeed;
 
@@ -59,10 +58,6 @@ void Camera::update(Input* input, float deltaTime)
         processMouseMovement(static_cast<float>(motion.x), -static_cast<float>(motion.y));
         processKeyboard(input, velocity);
     }
-
-    // Orbit
-    if (leftMouse && altPressed)
-        processOrbitMovement(static_cast<float>(motion.x), static_cast<float>(motion.y));
 
     // Zoom
     if (wheel != 0)
@@ -99,22 +94,6 @@ void Camera::processMouseMovement(float xoffset, float yoffset, bool constrainPi
     }
 
     updateCameraVectors();
-}
-
-void Camera::processOrbitMovement(float xoffset, float yoffset)
-{
-    xoffset *= mouseSensitivity;
-    yoffset *= mouseSensitivity;
-
-    yaw += xoffset;
-    pitch -= yoffset;
-
-    if (pitch > 89.0f) pitch = 89.0f;
-    if (pitch < -89.0f) pitch = -89.0f;
-
-    updateCameraVectors();
-
-    position = orbitTarget - front * orbitDistance;
 }
 
 void Camera::processMouseScroll(float yoffset)

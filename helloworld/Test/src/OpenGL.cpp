@@ -1,11 +1,13 @@
 #include "OpenGL.h"
 #include "Application.h"
-#include "Model.h"  // Incluir después de OpenGL.h
+#include "Model.h"
 #include <SDL3/SDL.h>
 #include <glad/glad.h>
 #include <iostream>
 #include <IL/il.h>
 #include <IL/ilu.h>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 OpenGL::OpenGL() : glContext(nullptr), shader(nullptr), fbxModel(nullptr), rotationAngle(0.0f) {}
 
@@ -64,42 +66,39 @@ bool OpenGL::Start()
         "{\n"
         "    float ambientStrength = 0.3;\n"
         "    vec3 ambient = ambientStrength * lightColor;\n"
-        "    \n"
         "    vec3 norm = normalize(Normal);\n"
         "    vec3 lightDir = normalize(lightPos - FragPos);\n"
         "    float diff = max(dot(norm, lightDir), 0.0);\n"
         "    vec3 diffuse = diff * lightColor;\n"
-        "    \n"
         "    float specularStrength = 0.5;\n"
         "    vec3 viewDir = normalize(viewPos - FragPos);\n"
         "    vec3 reflectDir = reflect(-lightDir, norm);\n"
         "    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);\n"
         "    vec3 specular = specularStrength * spec * lightColor;\n"
-        "    \n"
         "    vec4 texColor = texture(texture_diffuse1, TexCoord);\n"
         "    if(texColor.a < 0.1) texColor = vec4(1.0);\n"
-        "    \n"
         "    vec3 result = (ambient + diffuse + specular) * vec3(texColor);\n"
         "    FragColor = vec4(result, 1.0);\n"
         "}\0";
 
     shader = new Shader(vertexShaderSource, fragmentShaderSource);
 
-    // Cargar textura
-    texture = LoadTexture("../Assets/Textures/wall.jpg");
+    // Cargar una textura base
+    texture = LoadTexture("../Assets/Models/wall.jpg");
 
-    // Intentar cargar modelo FBX (opcional)
-    try
-    {
-        fbxModel = new Model("../Assets/Models/backpack.fbx");
-        std::cout << "Modelo FBX cargado correctamente" << std::endl;
-    }
-    catch (const std::exception& e)
-    {
-        std::cerr << "Advertencia: No se pudo cargar modelo FBX: " << e.what() << std::endl;
-        fbxModel = nullptr;
+    // Intentar cargar modelo FBX (opcional) 
+    try 
+    { 
+        fbxModel = new Model("../Assets/Models/BakerHouse.fbx"); 
+        std::cout << "Modelo FBX cargado correctamente" << std::endl; 
+    } 
+    catch (const std::exception& e) 
+    { 
+        std::cerr << "Advertencia: No se pudo cargar modelo FBX: " << e.what() << std::endl; 
+        fbxModel = nullptr; 
     }
 
+    std::cout << "OpenGL inicializado correctamente." << std::endl;
     return true;
 }
 
@@ -108,13 +107,64 @@ bool OpenGL::Update()
     glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    Application& app = Application::GetInstance();
+
+    // --- Drag & Drop: cargar modelos dinámicamente ---
+    if (!app.input->droppedFiles.empty())
+    {
+        for (const std::string& filePath : app.input->droppedFiles)
+        {
+            std::string ext = filePath.substr(filePath.find_last_of('.') + 1);
+            for (auto& c : ext) c = tolower(c); // pasar a minúsculas
+
+            if (ext == "fbx" || ext == "obj" || ext == "dae")
+            {
+                // Cargar modelo
+                if (fbxModel) delete fbxModel;
+                fbxModel = new Model(filePath);
+                std::cout << "Modelo cargado: " << filePath << std::endl;
+            }
+            else if (ext == "jpg" || ext == "png" || ext == "tga" || ext == "bmp")
+            {
+                // Cargar textura y aplicarla al modelo actual
+                if (fbxModel)
+                {
+                    GLuint texID = TextureFromFile(filePath.c_str(), "");
+                    for (auto& mesh : fbxModel->meshes)
+                    {
+                        // Reemplazar la textura difusa
+                        for (auto& tex : mesh.textures)
+                        {
+                            if (tex.type == "texture_diffuse")
+                            {
+                                glDeleteTextures(1, &tex.id); // eliminar vieja
+                                tex.id = texID;              // asignar nueva
+                            }
+                        }
+                    }
+                    std::cout << "Textura aplicada: " << filePath << std::endl;
+                }
+                else
+                {
+                    std::cout << "No hay modelo cargado para aplicar la textura: " << filePath << std::endl;
+                }
+            }
+            else
+            {
+                std::cout << "Archivo no soportado: " << filePath << std::endl;
+            }
+        }
+
+        app.input->droppedFiles.clear();
+    }
+
+
+    // Si no hay shader aún, no continuar
     if (!shader) return true;
 
     shader->use();
 
-    Application& app = Application::GetInstance();
-
-    // Usar matrices de la cámara
+    // Configurar matrices de cámara
     view = app.camera->getViewMatrix();
     projection = app.camera->getProjectionMatrix();
 
@@ -126,6 +176,7 @@ bool OpenGL::Update()
     glUniform3fv(glGetUniformLocation(shader->ID, "viewPos"), 1, glm::value_ptr(viewPos));
     glUniform3fv(glGetUniformLocation(shader->ID, "lightColor"), 1, glm::value_ptr(lightColor));
 
+    // Dibujar el modelo si hay uno cargado
     if (fbxModel)
     {
         modelMatrix = glm::mat4(1.0f);
@@ -141,7 +192,6 @@ bool OpenGL::Update()
 
     return true;
 }
-
 
 bool OpenGL::CleanUp()
 {
@@ -184,12 +234,12 @@ unsigned int OpenGL::LoadTexture(const char* path)
     ilGenImages(1, &imgID);
     ilBindImage(imgID);
 
-    std::cout << "Intentando cargar: " << path << std::endl;
+    std::cout << "Intentando cargar textura: " << path << std::endl;
 
     if (!ilLoadImage(path))
     {
         ILenum error = ilGetError();
-        std::cerr << "ERROR: No se pudo cargar la imagen. DevIL Code: "
+        std::cerr << "ERROR: No se pudo cargar la imagen.DevIL Code : "
             << error << " -> " << iluErrorString(error) << std::endl;
         ilDeleteImages(1, &imgID);
         return 0;
@@ -207,8 +257,10 @@ unsigned int OpenGL::LoadTexture(const char* path)
     GLuint texID;
     glGenTextures(1, &texID);
     glBindTexture(GL_TEXTURE_2D, texID);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ilGetInteger(IL_IMAGE_WIDTH),
-        ilGetInteger(IL_IMAGE_HEIGHT), 0, GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+        ilGetInteger(IL_IMAGE_WIDTH),
+        ilGetInteger(IL_IMAGE_HEIGHT),
+        0, GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
     glGenerateMipmap(GL_TEXTURE_2D);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);

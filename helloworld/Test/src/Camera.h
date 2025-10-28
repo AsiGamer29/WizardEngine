@@ -15,14 +15,12 @@ public:
     glm::vec3 getPosition() const { return position; }
 
     void setProjection(float fov, float aspect, float nearP, float farP);
-    void focusOnObject(const glm::vec3& target, float radius);
 
 private:
     void updateCameraVectors();
     void processKeyboard(Input* input, float deltaTime);
     void processMouseMovement(float xoffset, float yoffset, bool constrainPitch = true);
     void processMouseScroll(float yoffset);
-    void processOrbitMovement(float xoffset, float yoffset);
 
 private:
     glm::vec3 position;

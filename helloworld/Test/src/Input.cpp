@@ -32,9 +32,13 @@ bool Input::PreUpdate()
 {
     SDL_Event event;
 
+    // Limpiar archivos arrastrados este frame
+    droppedFiles.clear();
+
     mouseMotionX = mouseMotionY = 0;
     mouseWheelY = 0;
-    for (int i = 0; i < WE_COUNT; ++i) windowEvents[i] = false;
+    for (int i = 0; i < WE_COUNT; ++i)
+        windowEvents[i] = false;
 
     while (SDL_PollEvent(&event))
     {
@@ -89,21 +93,54 @@ bool Input::PreUpdate()
         case SDL_EVENT_WINDOW_RESTORED:
             windowEvents[WE_SHOW] = true;
             break;
+
+            // EVENTOS DE DRAG & DROP
+        case SDL_EVENT_DROP_BEGIN:
+            std::cout << "[Drag&Drop] Inicio del arrastre." << std::endl;
+            break;
+
+        case SDL_EVENT_DROP_FILE:
+            if (event.drop.data)
+            {
+                std::string path = event.drop.data;
+                droppedFiles.push_back(path);
+                std::cout << "[Drag&Drop] Archivo soltado: " << path << std::endl;
+            }
+            break;
+
+        case SDL_EVENT_DROP_TEXT:
+            if (event.drop.data)
+            {
+                std::string text = event.drop.data;
+                std::cout << "[Drag&Drop] Texto soltado: " << text << std::endl;
+            }
+            break;
+
+        case SDL_EVENT_DROP_COMPLETE:
+            std::cout << "[Drag&Drop] Arrastre completado." << std::endl;
+            break;
+
+        default:
+            break;
         }
     }
 
     // Actualizar estados del teclado
     for (int i = 0; i < MAX_KEYS; ++i)
     {
-        if (keyboard[i] == KEY_DOWN) keyboard[i] = KEY_REPEAT;
-        else if (keyboard[i] == KEY_UP) keyboard[i] = KEY_IDLE;
+        if (keyboard[i] == KEY_DOWN)
+            keyboard[i] = KEY_REPEAT;
+        else if (keyboard[i] == KEY_UP)
+            keyboard[i] = KEY_IDLE;
     }
 
     // Actualizar estados del ratón
     for (int i = 0; i < NUM_MOUSE_BUTTONS; ++i)
     {
-        if (mouseButtons[i] == KEY_DOWN) mouseButtons[i] = KEY_REPEAT;
-        else if (mouseButtons[i] == KEY_UP) mouseButtons[i] = KEY_IDLE;
+        if (mouseButtons[i] == KEY_DOWN)
+            mouseButtons[i] = KEY_REPEAT;
+        else if (mouseButtons[i] == KEY_UP)
+            mouseButtons[i] = KEY_IDLE;
     }
 
     return true;
@@ -117,12 +154,14 @@ bool Input::CleanUp()
 
 KeyState Input::GetKey(int scancode) const
 {
-    if (scancode < 0 || scancode >= MAX_KEYS) return KEY_IDLE;
+    if (scancode < 0 || scancode >= MAX_KEYS)
+        return KEY_IDLE;
     return keyboard[scancode];
 }
 
 KeyState Input::GetMouseButton(int id) const
 {
-    if (id < 1 || id > NUM_MOUSE_BUTTONS) return KEY_IDLE;
+    if (id < 1 || id > NUM_MOUSE_BUTTONS)
+        return KEY_IDLE;
     return mouseButtons[id - 1];
 }
