@@ -8,6 +8,8 @@
 #include <IL/ilu.h>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <fstream>
+#include <cstring>
 
 OpenGL::OpenGL() : glContext(nullptr), shader(nullptr), fbxModel(nullptr), rotationAngle(0.0f) {}
 
@@ -83,22 +85,28 @@ bool OpenGL::Start()
 
     shader = new Shader(vertexShaderSource, fragmentShaderSource);
 
-    // Cargar una textura base
-    texture = LoadTexture("../Assets/Models/wall.jpg");
-
-    // Intentar cargar modelo FBX (opcional) 
-    try 
-    { 
-        fbxModel = new Model("../Assets/Models/BakerHouse.fbx"); 
-        std::cout << "Modelo FBX cargado correctamente" << std::endl; 
-    } 
-    catch (const std::exception& e) 
-    { 
-        std::cerr << "Advertencia: No se pudo cargar modelo FBX: " << e.what() << std::endl; 
-        fbxModel = nullptr; 
+    // === CHECKERBOARD / TEXTURA BASE ===
+    texture = LoadTexture("../Assets/Textures/wall.jpg");
+    if (texture == 0)
+    {
+        std::cout << "Texture not found! Generating debug texture..." << std::endl;
+        texture = CreateCheckerboardTexture(512, 512, 32);
     }
 
-    std::cout << "OpenGL inicializado correctamente." << std::endl;
+    // === Cargar modelo inicial (sin texturas integradas) ===
+    try
+    {
+        fbxModel = new Model("../Assets/Models/BakerHouse.fbx");
+        fbxModel->ClearTextures();
+        std::cout << "Fbx file loaded!" << std::endl;
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Warning: FBX file failed to load!: " << e.what() << std::endl;
+        fbxModel = nullptr;
+    }
+
+    std::cout << "OpenGL started successfully." << std::endl;
     return true;
 }
 
@@ -109,44 +117,54 @@ bool OpenGL::Update()
 
     Application& app = Application::GetInstance();
 
-    // --- Drag & Drop: cargar modelos dinámicamente ---
+    // --- Drag & Drop: cargar modelos o texturas ---
     if (!app.input->droppedFiles.empty())
     {
         for (const std::string& filePath : app.input->droppedFiles)
         {
             std::string ext = filePath.substr(filePath.find_last_of('.') + 1);
-            for (auto& c : ext) c = tolower(c); // pasar a minúsculas
+            for (auto& c : ext) c = tolower(c);
 
             if (ext == "fbx" || ext == "obj" || ext == "dae")
             {
-                // Cargar modelo
-                if (fbxModel) delete fbxModel;
-                fbxModel = new Model(filePath);
-                std::cout << "Modelo cargado: " << filePath << std::endl;
-            }
-            else if (ext == "jpg" || ext == "png" || ext == "tga" || ext == "bmp")
-            {
-                // Cargar textura y aplicarla al modelo actual
                 if (fbxModel)
                 {
-                    GLuint texID = TextureFromFile(filePath.c_str(), "");
-                    for (auto& mesh : fbxModel->meshes)
-                    {
-                        // Reemplazar la textura difusa
-                        for (auto& tex : mesh.textures)
-                        {
-                            if (tex.type == "texture_diffuse")
-                            {
-                                glDeleteTextures(1, &tex.id); // eliminar vieja
-                                tex.id = texID;              // asignar nueva
-                            }
-                        }
-                    }
-                    std::cout << "Textura aplicada: " << filePath << std::endl;
+                    delete fbxModel;
+                    fbxModel = nullptr;
+                }
+
+                fbxModel = new Model(filePath);
+                fbxModel->ClearTextures();
+
+                if (texture)
+                {
+                    glDeleteTextures(1, &texture);
+                    texture = 0;
+                }
+
+                texture = CreateCheckerboardTexture(512, 512, 32);
+                std::cout << "Modelo cargado con textura debug: " << filePath << std::endl;
+            }
+            else if (ext == "jpg" || ext == "png" || ext == "tga" || ext == "bmp" || ext == "dds")
+            {
+                GLuint newTex = 0;
+
+                // Cargar según la extensión
+                if (ext == "dds")
+                {
+                    newTex = LoadDDSTexture(filePath.c_str());
                 }
                 else
                 {
-                    std::cout << "No hay modelo cargado para aplicar la textura: " << filePath << std::endl;
+                    newTex = LoadTexture(filePath.c_str());
+                }
+
+                if (newTex)
+                {
+                    if (texture)
+                        glDeleteTextures(1, &texture);
+                    texture = newTex;
+                    std::cout << "Textura activa cambiada a: " << filePath << std::endl;
                 }
             }
             else
@@ -159,7 +177,6 @@ bool OpenGL::Update()
     }
 
 
-    // Si no hay shader aún, no continuar
     if (!shader) return true;
 
     shader->use();
@@ -176,7 +193,6 @@ bool OpenGL::Update()
     glUniform3fv(glGetUniformLocation(shader->ID, "viewPos"), 1, glm::value_ptr(viewPos));
     glUniform3fv(glGetUniformLocation(shader->ID, "lightColor"), 1, glm::value_ptr(lightColor));
 
-    // Dibujar el modelo si hay uno cargado
     if (fbxModel)
     {
         modelMatrix = glm::mat4(1.0f);
@@ -187,72 +203,178 @@ bool OpenGL::Update()
         glUniformMatrix4fv(glGetUniformLocation(shader->ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
         glUniformMatrix4fv(glGetUniformLocation(shader->ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
 
+        // === Aplicar SIEMPRE la textura global ===
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+
         fbxModel->Draw(*shader);
     }
 
     return true;
 }
 
-bool OpenGL::CleanUp()
+unsigned int OpenGL::CreateCheckerboardTexture(int width, int height, int cellSize)
 {
-    if (fbxModel)
+    int numChannels = 3;
+    std::vector<unsigned char> data(width * height * numChannels);
+
+    for (int y = 0; y < height; y++)
     {
-        delete fbxModel;
-        fbxModel = nullptr;
+        for (int x = 0; x < width; x++)
+        {
+            bool isWhite = ((x / cellSize) % 2 == (y / cellSize) % 2);
+            unsigned char color = isWhite ? 255 : 40; // blanco / gris oscuro
+            int index = (y * width + x) * numChannels;
+            data[index + 0] = color;
+            data[index + 1] = color;
+            data[index + 2] = color;
+        }
     }
 
-    glDeleteVertexArrays(1, &VAO);
-    glDeleteVertexArrays(1, &pyramidVAO);
-    glDeleteVertexArrays(1, &sphereVAO);
-    glDeleteVertexArrays(1, &cylinderVAO);
+    GLuint texID;
+    glGenTextures(1, &texID);
+    glBindTexture(GL_TEXTURE_2D, texID);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0,
+        GL_RGB, GL_UNSIGNED_BYTE, data.data());
+    glGenerateMipmap(GL_TEXTURE_2D);
 
-    glDeleteBuffers(1, &VBO);
-    glDeleteBuffers(1, &EBO);
-    glDeleteBuffers(1, &pyramidVBO);
-    glDeleteBuffers(1, &pyramidEBO);
-    glDeleteBuffers(1, &sphereVBO);
-    glDeleteBuffers(1, &sphereEBO);
-    glDeleteBuffers(1, &cylinderVBO);
-    glDeleteBuffers(1, &cylinderEBO);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    glDeleteTextures(1, &texture);
-
-    if (shader)
-    {
-        glDeleteProgram(shader->ID);
-        delete shader;
-        shader = nullptr;
-    }
-
-    if (glContext) SDL_GL_DestroyContext(glContext);
-    return true;
+    std::cout << "Debug texture Checkerboard loaded (" << width << "x" << height << ")\n";
+    return texID;
 }
 
+// Función para cargar DDS
+unsigned int OpenGL::LoadDDSTexture(const char* path)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open())
+    {
+        std::cout << "Failed to open DDS file: " << path << std::endl;
+        return 0;
+    }
+
+    // Leer el magic number "DDS "
+    char magic[4];
+    file.read(magic, 4);
+    if (std::strncmp(magic, "DDS ", 4) != 0)
+    {
+        std::cout << "Invalid DDS file: " << path << std::endl;
+        file.close();
+        return 0;
+    }
+
+    // Leer el header DDS (124 bytes)
+    unsigned char header[124];
+    file.read(reinterpret_cast<char*>(header), 124);
+
+    unsigned int height = *(unsigned int*)&(header[8]);
+    unsigned int width = *(unsigned int*)&(header[12]);
+    unsigned int mipMapCount = *(unsigned int*)&(header[24]);
+    unsigned int fourCC = *(unsigned int*)&(header[80]);
+
+    // Si no hay mipmaps, establecer a 1
+    if (mipMapCount == 0) mipMapCount = 1;
+
+    // Determinar formato
+    GLenum format;
+    unsigned int blockSize;
+
+    if (fourCC == 0x31545844) // DXT1
+    {
+        format = 0x83F1; // GL_COMPRESSED_RGBA_S3TC_DXT1_EXT
+        blockSize = 8;
+    }
+    else if (fourCC == 0x33545844) // DXT3
+    {
+        format = 0x83F2; // GL_COMPRESSED_RGBA_S3TC_DXT3_EXT
+        blockSize = 16;
+    }
+    else if (fourCC == 0x35545844) // DXT5
+    {
+        format = 0x83F3; // GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
+        blockSize = 16;
+    }
+    else
+    {
+        std::cout << "Unsupported DDS format (FourCC: 0x" << std::hex << fourCC << ") in: " << path << std::endl;
+        file.close();
+        return 0;
+    }
+
+    // Calcular tamaño total de datos
+    unsigned int bufsize = ((width + 3) / 4) * ((height + 3) / 4) * blockSize;
+
+    // Para múltiples mipmaps, necesitamos más espacio
+    unsigned int totalSize = bufsize;
+    unsigned int w = width / 2;
+    unsigned int h = height / 2;
+    for (unsigned int i = 1; i < mipMapCount; i++)
+    {
+        if (w == 0) w = 1;
+        if (h == 0) h = 1;
+        totalSize += ((w + 3) / 4) * ((h + 3) / 4) * blockSize;
+        w /= 2;
+        h /= 2;
+    }
+
+    unsigned char* buffer = new unsigned char[totalSize];
+    file.read(reinterpret_cast<char*>(buffer), totalSize);
+    file.close();
+
+    // Crear textura OpenGL
+    GLuint texID;
+    glGenTextures(1, &texID);
+    glBindTexture(GL_TEXTURE_2D, texID);
+
+    unsigned int offset = 0;
+    w = width;
+    h = height;
+
+    // Cargar mipmaps
+    for (unsigned int level = 0; level < mipMapCount; ++level)
+    {
+        if (w == 0) w = 1;
+        if (h == 0) h = 1;
+
+        unsigned int size = ((w + 3) / 4) * ((h + 3) / 4) * blockSize;
+        glCompressedTexImage2D(GL_TEXTURE_2D, level, format, w, h, 0, size, buffer + offset);
+
+        offset += size;
+        w /= 2;
+        h /= 2;
+    }
+
+    delete[] buffer;
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, mipMapCount > 1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    std::cout << "DDS Texture loaded: " << path << " (" << width << "x" << height << ", " << mipMapCount << " mipmaps)\n";
+    return texID;
+}
+
+// Carga una textura desde archivo con DevIL
 unsigned int OpenGL::LoadTexture(const char* path)
 {
     ILuint imgID;
     ilGenImages(1, &imgID);
     ilBindImage(imgID);
 
-    std::cout << "Intentando cargar textura: " << path << std::endl;
-
     if (!ilLoadImage(path))
     {
-        ILenum error = ilGetError();
-        std::cerr << "ERROR: No se pudo cargar la imagen.DevIL Code : "
-            << error << " -> " << iluErrorString(error) << std::endl;
+        std::cout << "Texture failed to load: " << path
+            << " — generating debug texture.\n";
         ilDeleteImages(1, &imgID);
-        return 0;
+        return CreateCheckerboardTexture(512, 512, 32);
     }
 
-    if (!ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE))
-    {
-        ILenum error = ilGetError();
-        std::cerr << "ERROR: No se pudo convertir la imagen a RGBA: "
-            << iluErrorString(error) << std::endl;
-        ilDeleteImages(1, &imgID);
-        return 0;
-    }
+    ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
 
     GLuint texID;
     glGenTextures(1, &texID);
@@ -263,9 +385,21 @@ unsigned int OpenGL::LoadTexture(const char* path)
         0, GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
     glGenerateMipmap(GL_TEXTURE_2D);
 
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     ilDeleteImages(1, &imgID);
+
+    std::cout << "Texture loaded: " << path << "\n";
     return texID;
+}
+
+bool OpenGL::CleanUp()
+{
+    std::cout << "Cleaning OpenGL resources..." << std::endl;
+    if (texture)
+        glDeleteTextures(1, &texture);
+    return true;
 }

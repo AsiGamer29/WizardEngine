@@ -47,6 +47,18 @@ public:
             meshes[i].Draw(shader);
     }
 
+    void ClearTextures()
+    {
+        for (auto& mesh : meshes)
+        {
+            for (auto& tex : mesh.textures)
+            {
+                glDeleteTextures(1, &tex.id);
+            }
+            mesh.textures.clear();
+        }
+    }
+
 private:
     void loadModel(string const& path)
     {

@@ -11,9 +11,9 @@ Application::Application() : isRunning(true)
 
     // Crear cámara
     camera = std::make_shared<Camera>(
-        glm::vec3(0.0f, 0.0f, 5.0f),  // posición inicial
+        glm::vec3(0.0f, 0.0f, 5.0f),  // Starting position
         glm::vec3(0.0f, 1.0f, 0.0f),  // up
-        -90.0f, 0.0f                   // yaw y pitch
+        -90.0f, 0.0f                  // yaw y pitch
     );
 
     AddModule(std::static_pointer_cast<Module>(window));

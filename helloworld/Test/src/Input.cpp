@@ -96,7 +96,7 @@ bool Input::PreUpdate()
 
             // EVENTOS DE DRAG & DROP
         case SDL_EVENT_DROP_BEGIN:
-            std::cout << "[Drag&Drop] Inicio del arrastre." << std::endl;
+            std::cout << "[Drag&Drop] Starting sequence." << std::endl;
             break;
 
         case SDL_EVENT_DROP_FILE:
@@ -104,7 +104,7 @@ bool Input::PreUpdate()
             {
                 std::string path = event.drop.data;
                 droppedFiles.push_back(path);
-                std::cout << "[Drag&Drop] Archivo soltado: " << path << std::endl;
+                std::cout << "[Drag&Drop] Dropped file: " << path << std::endl;
             }
             break;
 
@@ -112,12 +112,12 @@ bool Input::PreUpdate()
             if (event.drop.data)
             {
                 std::string text = event.drop.data;
-                std::cout << "[Drag&Drop] Texto soltado: " << text << std::endl;
+                std::cout << "[Drag&Drop] Text dropped: " << text << std::endl;
             }
             break;
 
         case SDL_EVENT_DROP_COMPLETE:
-            std::cout << "[Drag&Drop] Arrastre completado." << std::endl;
+            std::cout << "[Drag&Drop] Event completed." << std::endl;
             break;
 
         default:
