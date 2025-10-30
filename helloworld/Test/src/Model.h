@@ -22,31 +22,32 @@
 
 using namespace std;
 
-// Declaración de función para cargar texturas con DevIL
+// Function declaration for loading textures using DevIL
 unsigned int TextureFromFile(const char* path, const string& directory, bool gamma = false);
 
 class Model
 {
 public:
-    // Datos del modelo
+    // Model data
     vector<Texture> textures_loaded;
     vector<Mesh> meshes;
     string directory;
     bool gammaCorrection;
 
-    // Constructor
+    // Constructor – loads a model right away
     Model(string const& path, bool gamma = false) : gammaCorrection(gamma)
     {
         loadModel(path);
     }
 
-    // Dibuja el modelo y todos sus meshes
+    // Draws the entire model (all its meshes)
     void Draw(Shader& shader)
     {
         for (size_t i = 0; i < meshes.size(); i++)
             meshes[i].Draw(shader);
     }
 
+    // Frees GPU textures for all meshes
     void ClearTextures()
     {
         for (auto& mesh : meshes)
@@ -60,6 +61,7 @@ public:
     }
 
 private:
+    // Loads a model from file using Assimp
     void loadModel(string const& path)
     {
         Assimp::Importer importer;
@@ -71,48 +73,55 @@ private:
 
         if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
         {
-            cout << "ERROR::ASSIMP:: " << importer.GetErrorString() << endl;
+            cout << "[ERROR] Failed to load model: " << importer.GetErrorString() << endl;
             return;
         }
 
         directory = path.substr(0, path.find_last_of('/'));
 
-        cout << "Modelo cargado: " << path << endl;
-        cout << "Numero de meshes: " << scene->mNumMeshes << endl;
+        cout << "[MODEL] Successfully loaded: " << path << endl;
+        cout << "         Mesh count: " << scene->mNumMeshes << endl;
 
         processNode(scene->mRootNode, scene);
     }
 
+    // Recursively processes all nodes in the Assimp scene
     void processNode(aiNode* node, const aiScene* scene)
     {
+        // Process all meshes in this node
         for (size_t i = 0; i < node->mNumMeshes; i++)
         {
             aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
             meshes.push_back(processMesh(mesh, scene));
         }
 
+        // Then process all child nodes
         for (size_t i = 0; i < node->mNumChildren; i++)
         {
             processNode(node->mChildren[i], scene);
         }
     }
 
+    // Converts an Assimp mesh into our own Mesh class
     Mesh processMesh(aiMesh* mesh, const aiScene* scene)
     {
         vector<Vertex> vertices;
         vector<unsigned int> indices;
         vector<Texture> textures;
 
+        // Extract vertex data
         for (size_t i = 0; i < mesh->mNumVertices; i++)
         {
             Vertex vertex;
             glm::vec3 vector;
 
+            // Positions
             vector.x = mesh->mVertices[i].x;
             vector.y = mesh->mVertices[i].y;
             vector.z = mesh->mVertices[i].z;
             vertex.Position = vector;
 
+            // Normals
             if (mesh->HasNormals())
             {
                 vector.x = mesh->mNormals[i].x;
@@ -125,6 +134,7 @@ private:
                 vertex.Normal = glm::vec3(0.0f, 1.0f, 0.0f);
             }
 
+            // Texture coordinates, tangents, and bitangents
             if (mesh->mTextureCoords[0])
             {
                 glm::vec2 vec;
@@ -152,11 +162,12 @@ private:
             }
             else
             {
-                vertex.TexCoords = glm::vec2(0.0f, 0.0f);
+                vertex.TexCoords = glm::vec2(0.0f);
                 vertex.Tangent = glm::vec3(0.0f);
                 vertex.Bitangent = glm::vec3(0.0f);
             }
 
+            // Initialize bone data to default values
             for (int j = 0; j < MAX_BONE_INFLUENCE; j++)
             {
                 vertex.m_BoneIDs[j] = -1;
@@ -166,6 +177,7 @@ private:
             vertices.push_back(vertex);
         }
 
+        // Process indices
         for (size_t i = 0; i < mesh->mNumFaces; i++)
         {
             aiFace face = mesh->mFaces[i];
@@ -173,6 +185,7 @@ private:
                 indices.push_back(face.mIndices[j]);
         }
 
+        // Process material textures
         aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
 
         vector<Texture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse");
@@ -187,12 +200,13 @@ private:
         vector<Texture> heightMaps = loadMaterialTextures(material, aiTextureType_AMBIENT, "texture_height");
         textures.insert(textures.end(), heightMaps.begin(), heightMaps.end());
 
-        cout << "Mesh procesado: " << vertices.size() << " vertices, "
-            << indices.size() << " indices, " << textures.size() << " texturas" << endl;
+        cout << "[MESH] Processed: " << vertices.size() << " vertices, "
+            << indices.size() << " indices, " << textures.size() << " textures" << endl;
 
         return Mesh(vertices, indices, textures);
     }
 
+    // Loads all textures of a specific type from a material
     vector<Texture> loadMaterialTextures(aiMaterial* mat, aiTextureType type, string typeName)
     {
         vector<Texture> textures;
@@ -226,7 +240,7 @@ private:
     }
 };
 
-// Función inline de carga de texturas
+// Inline texture loading function using DevIL
 inline unsigned int TextureFromFile(const char* path, const string& directory, bool gamma)
 {
     string filename = string(path);
@@ -248,24 +262,26 @@ inline unsigned int TextureFromFile(const char* path, const string& directory, b
     bool loaded = false;
     string loadedPath;
 
+    // Try multiple fallback paths for texture
     for (const auto& tryPath : pathsToTry)
     {
-        cout << "Intentando cargar textura: " << tryPath << endl;
+        cout << "[TEXTURE] Trying: " << tryPath << endl;
         if (ilLoadImage(tryPath.c_str()))
         {
             loaded = true;
             loadedPath = tryPath;
-            cout << " -> Textura encontrada!" << endl;
+            cout << "  -> Found and loaded successfully!" << endl;
             break;
         }
     }
 
+    // If texture failed to load, create a placeholder (magenta)
     if (!loaded)
     {
         ILenum error = ilGetError();
-        cout << "ERROR: No se pudo cargar la textura en ninguna ubicacion" << endl;
+        cout << "[ERROR] Texture could not be loaded from any location." << endl;
         for (auto& p : pathsToTry) cout << "  - " << p << endl;
-        cout << "DevIL Error: " << error << " -> " << iluErrorString(error) << endl;
+        cout << "  DevIL Error: " << error << " -> " << iluErrorString(error) << endl;
         ilDeleteImages(1, &imgID);
 
         unsigned int textureID;
@@ -278,10 +294,11 @@ inline unsigned int TextureFromFile(const char* path, const string& directory, b
         return textureID;
     }
 
+    // Convert to RGBA
     if (!ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE))
     {
         ILenum error = ilGetError();
-        cout << "ERROR: No se pudo convertir la imagen a RGBA: " << iluErrorString(error) << endl;
+        cout << "[ERROR] Failed to convert image to RGBA: " << iluErrorString(error) << endl;
         ilDeleteImages(1, &imgID);
 
         unsigned int textureID;
@@ -294,6 +311,7 @@ inline unsigned int TextureFromFile(const char* path, const string& directory, b
         return textureID;
     }
 
+    // Upload texture to OpenGL
     unsigned int textureID;
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
@@ -311,7 +329,7 @@ inline unsigned int TextureFromFile(const char* path, const string& directory, b
 
     ilDeleteImages(1, &imgID);
 
-    cout << "Textura cargada exitosamente: " << loadedPath << " (" << width << "x" << height << ")" << endl;
+    cout << "[TEXTURE] Loaded: " << loadedPath << " (" << width << "x" << height << ")" << endl;
 
     return textureID;
 }

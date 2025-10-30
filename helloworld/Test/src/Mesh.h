@@ -2,12 +2,9 @@
 #define MESH_H
 
 #include "Shader.h"
-
-#include <glad/glad.h> // holds all OpenGL type declarations
-
+#include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-
 #include <string>
 #include <vector>
 using namespace std;
@@ -15,16 +12,12 @@ using namespace std;
 #define MAX_BONE_INFLUENCE 4
 
 struct Vertex {
-    // position
     glm::vec3 Position;
-    // normal
     glm::vec3 Normal;
-    // texCoords
     glm::vec2 TexCoords;
-    // tangent
     glm::vec3 Tangent;
-    // bitangent
     glm::vec3 Bitangent;
+
     //bone indexes which will influence this vertex
     int m_BoneIDs[MAX_BONE_INFLUENCE];
     //weights from each bone
@@ -45,7 +38,6 @@ public:
     vector<Texture>      textures;
     unsigned int VAO;
 
-    // Transform local del mesh (rellenar desde Model cuando proceses el nodo)
     glm::mat4 modelMatrix = glm::mat4(1.0f);
 
     // constructor
@@ -55,11 +47,9 @@ public:
         this->indices = indices;
         this->textures = textures;
 
-        // now that we have all the required data, set the vertex buffers and its attribute pointers.
         setupMesh();
     }
 
-    // render the mesh (NO cambia la uniform 'model', la pone Model::Draw)
     void Mesh::Draw(Shader& shader)
     {
         unsigned int diffuseNr = 1;
@@ -96,17 +86,13 @@ private:
     // initializes all the buffer objects/arrays
     void setupMesh()
     {
-        // create buffers/arrays
         glGenVertexArrays(1, &VAO);
         glGenBuffers(1, &VBO);
         glGenBuffers(1, &EBO);
 
         glBindVertexArray(VAO);
-        // load data into vertex buffers
         glBindBuffer(GL_ARRAY_BUFFER, VBO);
-        // A great thing about structs is that their memory layout is sequential for all its items.
-        // The effect is that we can simply pass a pointer to the struct and it translates perfectly to a glm::vec3/2 array which
-        // again translates to 3/2 floats which translates to a byte array.
+       
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), &vertices[0], GL_STATIC_DRAW);
 
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);

@@ -94,7 +94,6 @@ bool Input::PreUpdate()
             windowEvents[WE_SHOW] = true;
             break;
 
-            // EVENTOS DE DRAG & DROP
         case SDL_EVENT_DROP_BEGIN:
             std::cout << "[Drag&Drop] Starting sequence." << std::endl;
             break;
@@ -125,7 +124,6 @@ bool Input::PreUpdate()
         }
     }
 
-    // Actualizar estados del teclado
     for (int i = 0; i < MAX_KEYS; ++i)
     {
         if (keyboard[i] == KEY_DOWN)
@@ -134,7 +132,6 @@ bool Input::PreUpdate()
             keyboard[i] = KEY_IDLE;
     }
 
-    // Actualizar estados del ratón
     for (int i = 0; i < NUM_MOUSE_BUTTONS; ++i)
     {
         if (mouseButtons[i] == KEY_DOWN)
