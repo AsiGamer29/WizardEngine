@@ -14,24 +14,19 @@ bool Window::Start()
 {
     std::cout << "Init SDL3 Window" << std::endl;
 
-    // Initialize SDL3
     if (!SDL_Init(SDL_INIT_VIDEO))
     {
         std::cerr << "SDL_Init failed! SDL Error: " << SDL_GetError() << std::endl;
         return false;
     }
 
-    // Set OpenGL version to 3.3
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);  // Major version
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);  // Minor version
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
 
-    // Use the core OpenGL profile (modern functions only)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
-    // Enable double buffering to prevent flickering
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-    // Set depth buffer to 24 bits for proper 3D rendering
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
 
@@ -40,7 +35,7 @@ bool Window::Start()
         "SDL3 OpenGL Window",
         width,
         height,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE  // Añade SDL_WINDOW_OPENGL
+        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE
     );
 
     if (window == nullptr)

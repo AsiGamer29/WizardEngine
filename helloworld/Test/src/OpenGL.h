@@ -39,8 +39,6 @@ private:
     bool CleanUp() override;
     void processInput(SDL_Window* window);
     bool Update() override;
-    GLuint CreateCheckerboardTexture(int width, int height, int checkSize);
-
 
     unsigned int sphereVAO = 0, sphereVBO = 0, sphereEBO = 0;
     unsigned int sphereIndexCount = 0;
@@ -48,8 +46,5 @@ private:
     unsigned int pyramidIndexCount = 0;
     unsigned int cylinderVAO = 0, cylinderVBO = 0, cylinderEBO = 0;
     unsigned int cylinderIndexCount = 0;
-
-    unsigned int LoadTexture(const char* path);
-    unsigned int LoadDDSTexture(const char* path);
 
 };

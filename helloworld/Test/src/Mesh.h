@@ -24,7 +24,7 @@ struct Vertex {
     float m_Weights[MAX_BONE_INFLUENCE];
 };
 
-struct Texture {
+struct MeshTexture {
     unsigned int id;
     string type;
     string path;
@@ -32,16 +32,15 @@ struct Texture {
 
 class Mesh {
 public:
-    // mesh Data
     vector<Vertex>       vertices;
     vector<unsigned int> indices;
-    vector<Texture>      textures;
+    vector<MeshTexture>  textures;
     unsigned int VAO;
 
     glm::mat4 modelMatrix = glm::mat4(1.0f);
 
     // constructor
-    Mesh(vector<Vertex> vertices, vector<unsigned int> indices, vector<Texture> textures)
+    Mesh(vector<Vertex> vertices, vector<unsigned int> indices, vector<MeshTexture> textures)
     {
         this->vertices = vertices;
         this->indices = indices;

@@ -29,7 +29,7 @@ class Model
 {
 public:
     // Model data
-    vector<Texture> textures_loaded;
+    vector<MeshTexture> textures_loaded;
     vector<Mesh> meshes;
     string directory;
     bool gammaCorrection;
@@ -107,7 +107,7 @@ private:
     {
         vector<Vertex> vertices;
         vector<unsigned int> indices;
-        vector<Texture> textures;
+        vector<MeshTexture> textures;
 
         // Extract vertex data
         for (size_t i = 0; i < mesh->mNumVertices; i++)
@@ -188,16 +188,16 @@ private:
         // Process material textures
         aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
 
-        vector<Texture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse");
+        vector<MeshTexture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse");
         textures.insert(textures.end(), diffuseMaps.begin(), diffuseMaps.end());
 
-        vector<Texture> specularMaps = loadMaterialTextures(material, aiTextureType_SPECULAR, "texture_specular");
+        vector<MeshTexture> specularMaps = loadMaterialTextures(material, aiTextureType_SPECULAR, "texture_specular");
         textures.insert(textures.end(), specularMaps.begin(), specularMaps.end());
 
-        vector<Texture> normalMaps = loadMaterialTextures(material, aiTextureType_HEIGHT, "texture_normal");
+        vector<MeshTexture> normalMaps = loadMaterialTextures(material, aiTextureType_HEIGHT, "texture_normal");
         textures.insert(textures.end(), normalMaps.begin(), normalMaps.end());
 
-        vector<Texture> heightMaps = loadMaterialTextures(material, aiTextureType_AMBIENT, "texture_height");
+        vector<MeshTexture> heightMaps = loadMaterialTextures(material, aiTextureType_AMBIENT, "texture_height");
         textures.insert(textures.end(), heightMaps.begin(), heightMaps.end());
 
         cout << "[MESH] Processed: " << vertices.size() << " vertices, "
@@ -207,9 +207,9 @@ private:
     }
 
     // Loads all textures of a specific type from a material
-    vector<Texture> loadMaterialTextures(aiMaterial* mat, aiTextureType type, string typeName)
+    vector<MeshTexture> loadMaterialTextures(aiMaterial* mat, aiTextureType type, string typeName)
     {
-        vector<Texture> textures;
+        vector<MeshTexture> textures;
         for (size_t i = 0; i < mat->GetTextureCount(type); i++)
         {
             aiString str;
@@ -228,7 +228,7 @@ private:
 
             if (!skip)
             {
-                Texture texture;
+                MeshTexture texture;
                 texture.id = TextureFromFile(str.C_Str(), this->directory);
                 texture.type = typeName;
                 texture.path = str.C_Str();
