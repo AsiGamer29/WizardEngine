@@ -1,4 +1,5 @@
 #include "Input.h"
+#include "Application.h"
 #include <iostream>
 #include <cstring>
 
@@ -32,7 +33,6 @@ bool Input::PreUpdate()
 {
     SDL_Event event;
 
-    // Limpiar archivos arrastrados este frame
     droppedFiles.clear();
 
     mouseMotionX = mouseMotionY = 0;
@@ -42,6 +42,8 @@ bool Input::PreUpdate()
 
     while (SDL_PollEvent(&event))
     {
+        Application::GetInstance().editor->ProcessEvent(event);
+
         switch (event.type)
         {
         case SDL_EVENT_QUIT:

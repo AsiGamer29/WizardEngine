@@ -34,10 +34,13 @@ public:
 
     Model* fbxModel = nullptr;
 
+    bool PreUpdate() override;
+
 private:
     bool Start() override;
     bool CleanUp() override;
     void processInput(SDL_Window* window);
+    
     bool Update() override;
 
     unsigned int sphereVAO = 0, sphereVBO = 0, sphereEBO = 0;

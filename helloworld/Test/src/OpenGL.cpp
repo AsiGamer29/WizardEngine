@@ -115,11 +115,16 @@ bool OpenGL::Start()
     return true;
 }
 
-bool OpenGL::Update()
+bool OpenGL::PreUpdate()
 {
     glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    return true;
+}
+
+bool OpenGL::Update()
+{
     Application& app = Application::GetInstance();
 
     // Handle drag & drop
@@ -167,6 +172,7 @@ bool OpenGL::Update()
         app.input->droppedFiles.clear();
     }
 
+    // Renderiza tu modelo 3D
     if (!shader) return true;
     shader->use();
 

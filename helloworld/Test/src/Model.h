@@ -34,7 +34,6 @@ public:
     string directory;
     bool gammaCorrection;
 
-    // Constructor – loads a model right away
     Model(string const& path, bool gamma = false) : gammaCorrection(gamma)
     {
         loadModel(path);
@@ -47,7 +46,6 @@ public:
             meshes[i].Draw(shader);
     }
 
-    // Frees GPU textures for all meshes
     void ClearTextures()
     {
         for (auto& mesh : meshes)
@@ -61,7 +59,6 @@ public:
     }
 
 private:
-    // Loads a model from file using Assimp
     void loadModel(string const& path)
     {
         Assimp::Importer importer;
@@ -85,31 +82,26 @@ private:
         processNode(scene->mRootNode, scene);
     }
 
-    // Recursively processes all nodes in the Assimp scene
     void processNode(aiNode* node, const aiScene* scene)
     {
-        // Process all meshes in this node
         for (size_t i = 0; i < node->mNumMeshes; i++)
         {
             aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
             meshes.push_back(processMesh(mesh, scene));
         }
 
-        // Then process all child nodes
         for (size_t i = 0; i < node->mNumChildren; i++)
         {
             processNode(node->mChildren[i], scene);
         }
     }
 
-    // Converts an Assimp mesh into our own Mesh class
     Mesh processMesh(aiMesh* mesh, const aiScene* scene)
     {
         vector<Vertex> vertices;
         vector<unsigned int> indices;
         vector<MeshTexture> textures;
 
-        // Extract vertex data
         for (size_t i = 0; i < mesh->mNumVertices; i++)
         {
             Vertex vertex;
@@ -167,7 +159,6 @@ private:
                 vertex.Bitangent = glm::vec3(0.0f);
             }
 
-            // Initialize bone data to default values
             for (int j = 0; j < MAX_BONE_INFLUENCE; j++)
             {
                 vertex.m_BoneIDs[j] = -1;
@@ -177,7 +168,6 @@ private:
             vertices.push_back(vertex);
         }
 
-        // Process indices
         for (size_t i = 0; i < mesh->mNumFaces; i++)
         {
             aiFace face = mesh->mFaces[i];
@@ -185,7 +175,6 @@ private:
                 indices.push_back(face.mIndices[j]);
         }
 
-        // Process material textures
         aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
 
         vector<MeshTexture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse");
@@ -206,7 +195,7 @@ private:
         return Mesh(vertices, indices, textures);
     }
 
-    // Loads all textures of a specific type from a material
+
     vector<MeshTexture> loadMaterialTextures(aiMaterial* mat, aiTextureType type, string typeName)
     {
         vector<MeshTexture> textures;

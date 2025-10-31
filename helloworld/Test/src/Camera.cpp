@@ -54,7 +54,7 @@ void Camera::update(Input* input, float deltaTime)
     if (altPressed && leftMouse)
     {
         if (!wasLeftMousePressed) {
-            orbitTarget = position + front * orbitDistance; // centra la órbita en lo que mira la cámara
+            orbitTarget = position + front * orbitDistance;
         }
         processOrbitMovement(static_cast<float>(motion.x), static_cast<float>(motion.y));
     }
@@ -106,31 +106,24 @@ void Camera::processMouseMovement(float xoffset, float yoffset, bool constrainPi
 
 void Camera::processOrbitMovement(float xoffset, float yoffset)
 {
-    // Invertimos el movimiento para que "orbite" de forma natural
     xoffset *= -mouseSensitivity;
     yoffset *= -mouseSensitivity;
 
-    // Actualizamos yaw/pitch igual que en free look
     yaw += xoffset;
     pitch += yoffset;
 
-    // Limitamos pitch para evitar voltear la cámara
     if (pitch > 89.0f) pitch = 89.0f;
     if (pitch < -89.0f) pitch = -89.0f;
 
-    // Calculamos dirección desde yaw/pitch (igual que en updateCameraVectors)
     glm::vec3 direction;
     direction.x = cos(glm::radians(pitch)) * cos(glm::radians(yaw));
     direction.y = sin(glm::radians(pitch));
     direction.z = cos(glm::radians(pitch)) * sin(glm::radians(yaw));
 
-    // La cámara orbita a una distancia fija del target
     position = orbitTarget - glm::normalize(direction) * orbitDistance;
 
-    // Mira hacia el target
     front = glm::normalize(orbitTarget - position);
 
-    // Recalcular ejes
     right = glm::normalize(glm::cross(front, worldUp));
     up = glm::normalize(glm::cross(right, front));
 }

@@ -1,21 +1,19 @@
-#pragma once
-
+#ifndef __APPLICATION_H__
+#define __APPLICATION_H__
+#include <vector>
 #include <memory>
-#include <list>
-#include "Window.h"
 #include "Module.h"
+#include "Window.h"
 #include "Input.h"
 #include "OpenGL.h"
-#include "Model.h"
-#include "Shader.h"
+#include "ModuleEditor.h"
 #include "Camera.h"
-
-class Module;
 
 class Application
 {
 public:
     static Application& GetInstance();
+    void AddModule(std::shared_ptr<Module> module);
 
     bool Awake();
     bool Start();
@@ -25,24 +23,20 @@ public:
     std::shared_ptr<Window> window;
     std::shared_ptr<Input> input;
     std::shared_ptr<OpenGL> opengl;
+    std::shared_ptr<ModuleEditor> editor;
     std::shared_ptr<Camera> camera;
 
 private:
     Application();
-    ~Application() = default;
     Application(const Application&) = delete;
     Application& operator=(const Application&) = delete;
-
-    void AddModule(std::shared_ptr<Module> module);
-    std::list<std::shared_ptr<Module>> moduleList;
-
-    bool isRunning;
 
     bool PreUpdate();
     bool DoUpdate();
     bool PostUpdate();
 
-    // Recursos
-    /*std::unique_ptr<Model> myModel;*/
-    std::unique_ptr<Shader> myShader;
+    std::vector<std::shared_ptr<Module>> moduleList;
+    bool isRunning;
 };
+
+#endif
