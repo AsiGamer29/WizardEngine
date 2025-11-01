@@ -22,10 +22,15 @@ public:
     int GetWidth() const { return width; }
     int GetHeight() const { return height; }
 
+    // New: allow runtime changes from editor
+    void SetWindowSize(int w, int h);
+    void SetVSync(bool enabled);
+
 private:
     SDL_Window* window;
     SDL_GLContext context;
     int width;
     int height;
     int scale;
+    bool vsync = true; // track current vsync state
 };

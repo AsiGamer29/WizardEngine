@@ -1,7 +1,7 @@
 #include "Window.h"
 #include <iostream>
 
-Window::Window() : window(nullptr), context(nullptr), width(1280), height(720), scale(1)
+Window::Window() : window(nullptr), context(nullptr), width(1280), height(720), scale(1), vsync(true)
 {
     std::cout << "Window Constructor" << std::endl;
 }
@@ -48,7 +48,13 @@ bool Window::Start()
     }
 
     SDL_GL_MakeCurrent(window, context);
-    SDL_GL_SetSwapInterval(1); // Enable vsync
+    SDL_GL_SetSwapInterval(vsync ? 1 : 0); // Enable/disable vsync
+
+    // Update width/height from actual window
+    int w, h;
+    SDL_GetWindowSize(window, &w, &h);
+    width = w;
+    height = h;
 
     return true;
 }
@@ -98,4 +104,21 @@ void Window::GetWindowSize(int& width, int& height) const
 int Window::GetScale() const
 {
     return scale;
+}
+
+void Window::SetWindowSize(int w, int h)
+{
+    if (window)
+    {
+        SDL_SetWindowSize(window, w, h);
+        width = w;
+        height = h;
+    }
+}
+
+void Window::SetVSync(bool enabled)
+{
+    vsync = enabled;
+    // Apply to current context
+    SDL_GL_SetSwapInterval(vsync ? 1 : 0);
 }
