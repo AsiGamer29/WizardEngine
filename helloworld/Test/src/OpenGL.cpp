@@ -2,6 +2,7 @@
 #include "Application.h"
 #include "Model.h"
 #include "Texture.h"
+#include "GeometryGenerator.h"
 #include <SDL3/SDL.h>
 #include <glad/glad.h>
 #include <iostream>
@@ -13,13 +14,18 @@
 
 OpenGL::OpenGL()
     : glContext(nullptr), shader(nullptr), fbxModel(nullptr), rotationAngle(0.0f), texture(0),
-    gridVAO(0), gridVBO(0), gridLineCount(0), showGrid(true) {
+    gridVAO(0), gridVBO(0), gridLineCount(0), showGrid(true),
+    currentGeometry(nullptr), isGeometryActive(false) {
 }
 
 OpenGL::~OpenGL()
 {
     if (shader) delete shader;
     if (fbxModel) delete fbxModel;
+    if (currentGeometry) {
+        currentGeometry->Cleanup();
+        delete currentGeometry;
+    }
 }
 
 void OpenGL::CreateGrid(int size)
@@ -27,23 +33,23 @@ void OpenGL::CreateGrid(int size)
     std::vector<float> gridVertices;
 
     for (int z = -size; z <= size; ++z) {
-        gridVertices.push_back(-size); // x1
-        gridVertices.push_back(0.0f);   // y1
-        gridVertices.push_back(z);      // z1
+        gridVertices.push_back(-size);
+        gridVertices.push_back(0.0f);
+        gridVertices.push_back(z);
 
-        gridVertices.push_back(size);   // x2
-        gridVertices.push_back(0.0f);   // y2
-        gridVertices.push_back(z);      // z2
+        gridVertices.push_back(size);
+        gridVertices.push_back(0.0f);
+        gridVertices.push_back(z);
     }
 
     for (int x = -size; x <= size; ++x) {
-        gridVertices.push_back(x);      // x1
-        gridVertices.push_back(0.0f);   // y1
-        gridVertices.push_back(-size);  // z1
+        gridVertices.push_back(x);
+        gridVertices.push_back(0.0f);
+        gridVertices.push_back(-size);
 
-        gridVertices.push_back(x);      // x2
-        gridVertices.push_back(0.0f);   // y2
-        gridVertices.push_back(size);   // z2
+        gridVertices.push_back(x);
+        gridVertices.push_back(0.0f);
+        gridVertices.push_back(size);
     }
 
     gridLineCount = gridVertices.size() / 3;
@@ -92,6 +98,50 @@ void OpenGL::DrawGrid()
     glBindVertexArray(0);
 }
 
+void OpenGL::LoadGeometry(const std::string& type) {
+    // Limpiar geometría anterior
+    if (currentGeometry) {
+        currentGeometry->Cleanup();
+        delete currentGeometry;
+        currentGeometry = nullptr;
+    }
+
+    // Limpiar modelo FBX si existe
+    if (fbxModel) {
+        delete fbxModel;
+        fbxModel = nullptr;
+    }
+
+    // Crear nueva geometría
+    currentGeometry = new MeshGeometry();
+
+    if (type == "Cube") {
+        *currentGeometry = GeometryGenerator::CreateCube(2.0f);
+    }
+    else if (type == "Sphere") {
+        *currentGeometry = GeometryGenerator::CreateSphere(1.0f, 32, 16);
+    }
+    else if (type == "Cylinder") {
+        *currentGeometry = GeometryGenerator::CreateCylinder(1.0f, 2.0f, 32);
+    }
+    else if (type == "Pyramid") {
+        *currentGeometry = GeometryGenerator::CreatePyramid(2.0f, 2.0f);
+    }
+    else if (type == "Plane") {
+        *currentGeometry = GeometryGenerator::CreatePlane(5.0f, 5.0f);
+    }
+
+    isGeometryActive = true;
+
+    // Usar textura checkerboard
+    if (texture) {
+        glDeleteTextures(1, &texture);
+    }
+    texture = Texture::CreateCheckerboardTexture(512, 512, 32);
+
+    std::cout << "Loaded geometry: " << type << std::endl;
+}
+
 bool OpenGL::Start()
 {
     SDL_Window* window = Application::GetInstance().window->GetWindow();
@@ -103,6 +153,7 @@ bool OpenGL::Start()
         return false;
     }
 
+    glDisable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
 
     // Initialize DevIL
@@ -183,7 +234,7 @@ bool OpenGL::Start()
         fbxModel = nullptr;
     }
 
-    // Crear el grid (20x20 metros = grid de 40x40 metros total)
+    // Crear el grid
     CreateGrid(20);
 
     std::cout << "OpenGL initialization complete" << std::endl;
@@ -212,6 +263,14 @@ bool OpenGL::Update()
 
             if (ext == "fbx" || ext == "obj" || ext == "dae")
             {
+                // Limpiar geometría procedural
+                if (currentGeometry) {
+                    currentGeometry->Cleanup();
+                    delete currentGeometry;
+                    currentGeometry = nullptr;
+                    isGeometryActive = false;
+                }
+
                 if (fbxModel) { delete fbxModel; fbxModel = nullptr; }
                 fbxModel = new Model(filePath);
                 fbxModel->ClearTextures();
@@ -264,7 +323,21 @@ bool OpenGL::Update()
     glUniform3fv(glGetUniformLocation(shader->ID, "viewPos"), 1, glm::value_ptr(viewPos));
     glUniform3fv(glGetUniformLocation(shader->ID, "lightColor"), 1, glm::value_ptr(lightColor));
 
-    if (fbxModel)
+    // Renderizar geometría procedural o modelo FBX
+    if (isGeometryActive && currentGeometry)
+    {
+        modelMatrix = glm::mat4(1.0f);
+        modelMatrix = glm::rotate(modelMatrix, rotationAngle, glm::vec3(0, 1, 0));
+
+        glUniformMatrix4fv(glGetUniformLocation(shader->ID, "model"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+        glUniformMatrix4fv(glGetUniformLocation(shader->ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(glGetUniformLocation(shader->ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        currentGeometry->Draw();
+    }
+    else if (fbxModel)
     {
         modelMatrix = glm::mat4(1.0f);
         modelMatrix = glm::rotate(modelMatrix, rotationAngle, glm::vec3(0, 1, 0));
@@ -285,6 +358,13 @@ bool OpenGL::Update()
 bool OpenGL::CleanUp()
 {
     std::cout << "Cleaning up OpenGL resources..." << std::endl;
+
+    // Delete geometry resources
+    if (currentGeometry) {
+        currentGeometry->Cleanup();
+        delete currentGeometry;
+        currentGeometry = nullptr;
+    }
 
     // Delete grid resources
     if (gridVBO) {

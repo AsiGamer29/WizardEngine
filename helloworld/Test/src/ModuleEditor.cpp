@@ -77,22 +77,27 @@ bool ModuleEditor::Update()
             if (ImGui::MenuItem("Cube"))
             {
                 requested_geometry = "Cube";
+                Application::GetInstance().opengl->LoadGeometry("Cube");
             }
             if (ImGui::MenuItem("Sphere"))
             {
                 requested_geometry = "Sphere";
+                Application::GetInstance().opengl->LoadGeometry("Sphere");
             }
             if (ImGui::MenuItem("Cylinder"))
             {
                 requested_geometry = "Cylinder";
+                Application::GetInstance().opengl->LoadGeometry("Cylinder");
             }
             if (ImGui::MenuItem("Pyramid"))
             {
                 requested_geometry = "Pyramid";
+                Application::GetInstance().opengl->LoadGeometry("Pyramid");
             }
             if (ImGui::MenuItem("Plane"))
             {
                 requested_geometry = "Plane";
+                Application::GetInstance().opengl->LoadGeometry("Plane");
             }
             ImGui::EndMenu();
         }
