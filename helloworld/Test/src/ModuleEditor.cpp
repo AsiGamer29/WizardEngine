@@ -6,6 +6,31 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <sstream>
+#include <cstdarg>
+
+// Engine console storage definitions
+std::vector<std::string> ModuleEditor::engine_log;
+std::mutex ModuleEditor::engine_log_mutex;
+size_t ModuleEditor::engine_log_max_messages = 8192;
+bool ModuleEditor::engine_log_auto_scroll = true;
+
+void ModuleEditor::PushEngineLog(const std::string& msg)
+{
+    std::lock_guard<std::mutex> lock(engine_log_mutex);
+    engine_log.push_back(msg);
+    if (engine_log.size() > engine_log_max_messages)
+        engine_log.erase(engine_log.begin(), engine_log.begin() + (engine_log.size() - engine_log_max_messages));
+}
+
+void ModuleEditor::PushEnginePrintf(const char* fmt, ...)
+{
+    char buffer[4096];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+    PushEngineLog(std::string(buffer));
+}
 
 ModuleEditor::ModuleEditor()
 {
@@ -54,6 +79,23 @@ bool ModuleEditor::Start()
     ImGui_ImplSDL3_InitForOpenGL(app.window->GetWindow(), app.window->GetContext());
     ImGui_ImplOpenGL3_Init("#version 330 core");
 
+    // Log initial status
+    PushEngineLog("Starting Engine...");
+    PushEnginePrintf("IMGUI: Initialized (version: %s)", ImGui::GetVersion());
+
+    if (app.window)
+    {
+        PushEnginePrintf("Window: %dx%d", settings.window_width, settings.window_height);
+        PushEnginePrintf("VSync: %s", settings.vsync ? "On" : "Off");
+    }
+
+    const char* glver = (const char*)glGetString(GL_VERSION);
+    PushEnginePrintf("OpenGL Version: %s", glver ? glver : "Unknown");
+
+    PushEnginePrintf("SDL Platform: %s", SDL_GetPlatform());
+
+    PushEngineLog("Engine started.");
+
     return true;
 }
 
@@ -87,15 +129,32 @@ bool ModuleEditor::Update()
                 SDL_zero(evt);
                 evt.type = SDL_EVENT_QUIT;
                 SDL_PushEvent(&evt);
+                PushEngineLog("User requested Exit.");
             }
             ImGui::EndMenu();
         }
 
         if (ImGui::BeginMenu("View"))
         {
+            // track toggles to inform
+            bool prev_demo = show_demo_window;
+            bool prev_test = show_test_window;
+            bool prev_about = show_about_window;
+            bool prev_console = show_console_window;
+
             ImGui::MenuItem("Demo Window", NULL, &show_demo_window);
             ImGui::MenuItem("Test Window", NULL, &show_test_window);
             ImGui::MenuItem("About", NULL, &show_about_window);
+            ImGui::MenuItem("Console", NULL, &show_console_window);
+
+            if (prev_demo != show_demo_window)
+                PushEnginePrintf("Demo Window %s", show_demo_window ? "opened" : "closed");
+            if (prev_test != show_test_window)
+                PushEnginePrintf("Test Window %s", show_test_window ? "opened" : "closed");
+            if (prev_about != show_about_window)
+                PushEnginePrintf("About Window %s", show_about_window ? "opened" : "closed");
+            if (prev_console != show_console_window)
+                PushEnginePrintf("Console Window %s", show_console_window ? "opened" : "closed");
 
             // Configuration submenu inside View
             if (ImGui::BeginMenu("Configuration"))
@@ -114,27 +173,52 @@ bool ModuleEditor::Update()
             if (ImGui::MenuItem("Cube"))
             {
                 requested_geometry = "Cube";
-                Application::GetInstance().opengl->LoadGeometry("Cube");
+                PushEnginePrintf("Requested geometry: %s", requested_geometry.c_str());
+                if (Application::GetInstance().opengl)
+                {
+                    Application::GetInstance().opengl->LoadGeometry("Cube");
+                    PushEnginePrintf("LoadGeometry called for %s", "Cube");
+                }
             }
             if (ImGui::MenuItem("Sphere"))
             {
                 requested_geometry = "Sphere";
-                Application::GetInstance().opengl->LoadGeometry("Sphere");
+                PushEnginePrintf("Requested geometry: %s", requested_geometry.c_str());
+                if (Application::GetInstance().opengl)
+                {
+                    Application::GetInstance().opengl->LoadGeometry("Sphere");
+                    PushEnginePrintf("LoadGeometry called for %s", "Sphere");
+                }
             }
             if (ImGui::MenuItem("Cylinder"))
             {
                 requested_geometry = "Cylinder";
-                Application::GetInstance().opengl->LoadGeometry("Cylinder");
+                PushEnginePrintf("Requested geometry: %s", requested_geometry.c_str());
+                if (Application::GetInstance().opengl)
+                {
+                    Application::GetInstance().opengl->LoadGeometry("Cylinder");
+                    PushEnginePrintf("LoadGeometry called for %s", "Cylinder");
+                }
             }
             if (ImGui::MenuItem("Pyramid"))
             {
                 requested_geometry = "Pyramid";
-                Application::GetInstance().opengl->LoadGeometry("Pyramid");
+                PushEnginePrintf("Requested geometry: %s", requested_geometry.c_str());
+                if (Application::GetInstance().opengl)
+                {
+                    Application::GetInstance().opengl->LoadGeometry("Pyramid");
+                    PushEnginePrintf("LoadGeometry called for %s", "Pyramid");
+                }
             }
             if (ImGui::MenuItem("Plane"))
             {
                 requested_geometry = "Plane";
-                Application::GetInstance().opengl->LoadGeometry("Plane");
+                PushEnginePrintf("Requested geometry: %s", requested_geometry.c_str());
+                if (Application::GetInstance().opengl)
+                {
+                    Application::GetInstance().opengl->LoadGeometry("Plane");
+                    PushEnginePrintf("LoadGeometry called for %s", "Plane");
+                }
             }
             ImGui::EndMenu();
         }
@@ -144,18 +228,22 @@ bool ModuleEditor::Update()
             if (ImGui::MenuItem("Documentation on GitHub"))
             {
                 SDL_OpenURL("https://github.com/AsiGamer29/WizardEngine/blob/main/helloworld/docs/Documentation.md");
+                PushEngineLog("Opened Documentation URL.");
             }
             if (ImGui::MenuItem("Report a bug"))
             {
                 SDL_OpenURL("https://github.com/AsiGamer29/WizardEngine/issues");
+                PushEngineLog("Opened Issue Tracker URL.");
             }
             if (ImGui::MenuItem("Download latest"))
             {
                 SDL_OpenURL("https://github.com/AsiGamer29/WizardEngine/releases");
+                PushEngineLog("Opened Releases URL.");
             }
             if (ImGui::MenuItem("About"))
             {
                 show_about_window = !show_about_window;
+                PushEnginePrintf("Toggled About: %s", show_about_window ? "open" : "closed");
             }
             ImGui::EndMenu();
         }
@@ -191,6 +279,7 @@ bool ModuleEditor::Update()
         if (ImGui::Button("Toggle Demo Window"))
         {
             show_demo_window = !show_demo_window;
+            PushEnginePrintf("Demo Window %s", show_demo_window ? "opened" : "closed");
         }
 
         ImGui::Checkbox("Show Demo Window", &show_demo_window);
@@ -201,6 +290,38 @@ bool ModuleEditor::Update()
             ImGui::Separator();
             ImGui::Text("Last requested geometry: %s", requested_geometry.c_str());
         }
+
+        ImGui::End();
+    }
+
+    // Console window
+    if (show_console_window)
+    {
+        ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Console", &show_console_window);
+
+        if (ImGui::Button("Clear"))
+        {
+            std::lock_guard<std::mutex> lock(engine_log_mutex);
+            engine_log.clear();
+            PushEngineLog("Console cleared by user.");
+        }
+        ImGui::SameLine();
+        ImGui::Checkbox("Auto-scroll", &engine_log_auto_scroll);
+
+        ImGui::Separator();
+
+        ImGui::BeginChild("ConsoleRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+        {
+            std::lock_guard<std::mutex> lock(engine_log_mutex);
+            for (const auto& line : engine_log)
+            {
+                ImGui::TextUnformatted(line.c_str());
+            }
+            if (engine_log_auto_scroll)
+                ImGui::SetScrollHereY(1.0f);
+        }
+        ImGui::EndChild();
 
         ImGui::End();
     }
@@ -243,6 +364,7 @@ bool ModuleEditor::Update()
             // apply to real window
             auto& app = Application::GetInstance();
             if (app.window) app.window->SetWindowSize(settings.window_width, settings.window_height);
+            PushEnginePrintf("Window resized to %dx%d", settings.window_width, settings.window_height);
         }
 
         bool oldVsync = settings.vsync;
@@ -251,6 +373,7 @@ bool ModuleEditor::Update()
         {
             auto& app = Application::GetInstance();
             if (app.window) app.window->SetVSync(settings.vsync);
+            PushEnginePrintf("VSync %s", settings.vsync ? "enabled" : "disabled");
         }
 
         ImGui::Separator();
@@ -265,6 +388,7 @@ bool ModuleEditor::Update()
                 if (settings.wireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
                 else glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             }
+            PushEnginePrintf("Wireframe %s", settings.wireframe ? "enabled" : "disabled");
         }
         ImGui::ColorEdit3("Clear Color", settings.clear_color);
         // Note: apply clear color could be used by OpenGL module; here just store
@@ -281,10 +405,16 @@ bool ModuleEditor::Update()
                 // Camera currently stores sensitivity privately; for now we can hack by updating camera's private field if it were public.
                 // As a safe approach, we can expose camera sensitivity setter later. For now store value for eventual use.
             }
+            PushEnginePrintf("Mouse sensitivity changed to %.2f", settings.mouse_sensitivity);
         }
         ImGui::Separator();
         ImGui::Text("Textures");
+        int oldFilter = settings.texture_filter;
         ImGui::Combo("Filter", &settings.texture_filter, "Nearest\0Linear\0");
+        if (oldFilter != settings.texture_filter)
+        {
+            PushEnginePrintf("Texture filter set to %s", settings.texture_filter == 0 ? "Nearest" : "Linear");
+        }
         ImGui::End();
     }
 
@@ -294,18 +424,12 @@ bool ModuleEditor::Update()
         ImGui::Begin("System Info", &show_config_system);
         ImGui::Text("Platform: %s", SDL_GetPlatform());
 
-        int sdl_ver = SDL_GetVersion();
-        int sdl_major = sdl_ver / 1000000;
-        int sdl_minor = (sdl_ver / 1000) % 1000;
-        int sdl_patch = sdl_ver % 1000;
-        ImGui::Text("SDL Version: %d.%d.%d", sdl_major, sdl_minor, sdl_patch);
-
         ImGui::Text("CPU Count: %d", SDL_GetNumLogicalCPUCores());
         ImGui::Text("CPU Cache Line Size: %d bytes", SDL_GetCPUCacheLineSize());
         ImGui::Text("System RAM (MB): %d", SDL_GetSystemRAM());
 
-        const char* glver = (const char*)glGetString(GL_VERSION);
-        ImGui::Text("OpenGL Version: %s", glver ? glver : "Unknown");
+        const char* glver2 = (const char*)glGetString(GL_VERSION);
+        ImGui::Text("OpenGL Version: %s", glver2 ? glver2 : "Unknown");
 
         ImGui::Text("DevIL: not detected (placeholder)");
         ImGui::End();

@@ -2,6 +2,8 @@
 #include "Module.h"
 #include <SDL3/SDL.h>
 #include <string>
+#include <vector>
+#include <mutex>
 
 class ModuleEditor : public Module
 {
@@ -17,10 +19,15 @@ public:
 
     void ProcessEvent(const SDL_Event& event);
 
+    // API for engine modules to report messages to the editor console
+    static void PushEngineLog(const std::string& msg);
+    static void PushEnginePrintf(const char* fmt, ...);
+
 private:
     bool show_demo_window = true;
     bool show_test_window = true;
     bool show_about_window = false; // About window toggle
+    bool show_console_window = false; // Console window toggle
 
     // Geometry loading menu helper
     std::string requested_geometry; // name of the geometry requested to load
@@ -51,4 +58,10 @@ private:
         // Textures
         int texture_filter = 0; // 0 = Nearest, 1 = Linear
     } settings;
+
+    // Engine console storage (thread-safe)
+    static std::vector<std::string> engine_log;
+    static std::mutex engine_log_mutex;
+    static size_t engine_log_max_messages;
+    static bool engine_log_auto_scroll;
 };
