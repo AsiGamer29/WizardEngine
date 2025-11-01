@@ -72,20 +72,27 @@ bool ModuleEditor::Update()
             ImGui::EndMenu();
         }
 
-        // New top-level Geometry menu
         if (ImGui::BeginMenu("Geometry"))
         {
             if (ImGui::MenuItem("Cube"))
             {
-                requested_geometry = "Cube"; // request geometry (actual loading not implemented)
+                requested_geometry = "Cube";
             }
             if (ImGui::MenuItem("Sphere"))
             {
-                requested_geometry = "Sphere"; // request geometry (actual loading not implemented)
+                requested_geometry = "Sphere";
+            }
+            if (ImGui::MenuItem("Cylinder"))
+            {
+                requested_geometry = "Cylinder";
+            }
+            if (ImGui::MenuItem("Pyramid"))
+            {
+                requested_geometry = "Pyramid";
             }
             if (ImGui::MenuItem("Plane"))
             {
-                requested_geometry = "Plane"; // request geometry (actual loading not implemented)
+                requested_geometry = "Plane";
             }
             ImGui::EndMenu();
         }
@@ -94,16 +101,15 @@ bool ModuleEditor::Update()
         {
             if (ImGui::MenuItem("Documentation on GitHub"))
             {
-                // placeholder URL, user will replace
-                SDL_OpenURL("https://github.com/your/repo/docs");
+                SDL_OpenURL("https://github.com/AsiGamer29/WizardEngine/blob/main/helloworld/docs/Documentation.md");
             }
             if (ImGui::MenuItem("Report a bug"))
             {
-                SDL_OpenURL("https://github.com/your/repo/issues");
+                SDL_OpenURL("https://github.com/AsiGamer29/WizardEngine/issues");
             }
             if (ImGui::MenuItem("Download latest"))
             {
-                SDL_OpenURL("https://github.com/your/repo/releases");
+                SDL_OpenURL("https://github.com/AsiGamer29/WizardEngine/releases");
             }
             if (ImGui::MenuItem("About"))
             {
