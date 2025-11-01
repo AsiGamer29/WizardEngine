@@ -9,15 +9,87 @@
 #include <IL/ilu.h>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <vector>
 
 OpenGL::OpenGL()
-    : glContext(nullptr), shader(nullptr), fbxModel(nullptr), rotationAngle(0.0f), texture(0) {
+    : glContext(nullptr), shader(nullptr), fbxModel(nullptr), rotationAngle(0.0f), texture(0),
+    gridVAO(0), gridVBO(0), gridLineCount(0), showGrid(true) {
 }
 
 OpenGL::~OpenGL()
 {
     if (shader) delete shader;
     if (fbxModel) delete fbxModel;
+}
+
+void OpenGL::CreateGrid(int size)
+{
+    std::vector<float> gridVertices;
+
+    for (int z = -size; z <= size; ++z) {
+        gridVertices.push_back(-size); // x1
+        gridVertices.push_back(0.0f);   // y1
+        gridVertices.push_back(z);      // z1
+
+        gridVertices.push_back(size);   // x2
+        gridVertices.push_back(0.0f);   // y2
+        gridVertices.push_back(z);      // z2
+    }
+
+    for (int x = -size; x <= size; ++x) {
+        gridVertices.push_back(x);      // x1
+        gridVertices.push_back(0.0f);   // y1
+        gridVertices.push_back(-size);  // z1
+
+        gridVertices.push_back(x);      // x2
+        gridVertices.push_back(0.0f);   // y2
+        gridVertices.push_back(size);   // z2
+    }
+
+    gridLineCount = gridVertices.size() / 3;
+
+    glGenVertexArrays(1, &gridVAO);
+    glGenBuffers(1, &gridVBO);
+
+    glBindVertexArray(gridVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, gridVBO);
+    glBufferData(GL_ARRAY_BUFFER, gridVertices.size() * sizeof(float), gridVertices.data(), GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glBindVertexArray(0);
+
+    std::cout << "Grid created with " << (size * 2 + 1) * 2 << " lines" << std::endl;
+}
+
+void OpenGL::DrawGrid()
+{
+    if (!showGrid || gridVAO == 0) return;
+
+    shader->use();
+
+    Application& app = Application::GetInstance();
+
+    glm::mat4 model = glm::mat4(1.0f);
+    glm::mat4 view = app.camera->getViewMatrix();
+    glm::mat4 projection = app.camera->getProjectionMatrix();
+
+    glUniformMatrix4fv(glGetUniformLocation(shader->ID, "model"), 1, GL_FALSE, glm::value_ptr(model));
+    glUniformMatrix4fv(glGetUniformLocation(shader->ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(glGetUniformLocation(shader->ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+
+    glm::vec3 lightPos(0.0f, 50.0f, 0.0f);
+    glm::vec3 viewPos = app.camera->getPosition();
+    glm::vec3 lightColor(2.0f, 2.0f, 2.0f);
+
+    glUniform3fv(glGetUniformLocation(shader->ID, "lightPos"), 1, glm::value_ptr(lightPos));
+    glUniform3fv(glGetUniformLocation(shader->ID, "viewPos"), 1, glm::value_ptr(viewPos));
+    glUniform3fv(glGetUniformLocation(shader->ID, "lightColor"), 1, glm::value_ptr(lightColor));
+
+    glBindVertexArray(gridVAO);
+    glDrawArrays(GL_LINES, 0, gridLineCount);
+    glBindVertexArray(0);
 }
 
 bool OpenGL::Start()
@@ -111,6 +183,9 @@ bool OpenGL::Start()
         fbxModel = nullptr;
     }
 
+    // Crear el grid (20x20 metros = grid de 40x40 metros total)
+    CreateGrid(20);
+
     std::cout << "OpenGL initialization complete" << std::endl;
     return true;
 }
@@ -172,7 +247,8 @@ bool OpenGL::Update()
         app.input->droppedFiles.clear();
     }
 
-    // Renderiza tu modelo 3D
+    DrawGrid();
+
     if (!shader) return true;
     shader->use();
 
@@ -209,7 +285,19 @@ bool OpenGL::Update()
 bool OpenGL::CleanUp()
 {
     std::cout << "Cleaning up OpenGL resources..." << std::endl;
+
+    // Delete grid resources
+    if (gridVBO) {
+        glDeleteBuffers(1, &gridVBO);
+        gridVBO = 0;
+    }
+    if (gridVAO) {
+        glDeleteVertexArrays(1, &gridVAO);
+        gridVAO = 0;
+    }
+
     if (texture)
         glDeleteTextures(1, &texture);
+
     return true;
 }

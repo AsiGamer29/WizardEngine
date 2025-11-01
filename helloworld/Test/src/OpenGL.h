@@ -34,14 +34,20 @@ public:
 
     Model* fbxModel = nullptr;
 
+    void CreateGrid(int size);
+    void DrawGrid();
     bool PreUpdate() override;
 
 private:
     bool Start() override;
     bool CleanUp() override;
     void processInput(SDL_Window* window);
-    
     bool Update() override;
+
+    GLuint gridVAO = 0;
+    GLuint gridVBO = 0;
+    int gridLineCount = 0;
+    bool showGrid = true;
 
     unsigned int sphereVAO = 0, sphereVBO = 0, sphereEBO = 0;
     unsigned int sphereIndexCount = 0;
