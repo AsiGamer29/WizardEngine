@@ -494,5 +494,46 @@ bool ModuleEditor::CleanUp()
 
 void ModuleEditor::ProcessEvent(const SDL_Event& event)
 {
+    // Detect file drop events and log filename only
+    if (event.type == SDL_EVENT_DROP_FILE)
+    {
+        const char* data = event.drop.data;
+        if (data)
+        {
+            std::string path(data);
+            // extract filename (basename)
+            std::string name;
+            size_t pos = path.find_last_of("/\\");
+            if (pos != std::string::npos && pos + 1 < path.size())
+                name = path.substr(pos + 1);
+            else
+                name = path;
+
+            // determine extension
+            std::string ext;
+            size_t dot = name.find_last_of('.');
+            if (dot != std::string::npos && dot + 1 < name.size())
+                ext = name.substr(dot + 1);
+            std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c){ return std::tolower(c); });
+
+            const std::vector<std::string> tex_ext = {"png","jpg","jpeg","bmp","tga","dds","tif","tiff","psd"};
+            const std::vector<std::string> model_ext = {"fbx","obj","gltf","glb","dae","3ds"};
+
+            if (std::find(tex_ext.begin(), tex_ext.end(), ext) != tex_ext.end())
+            {
+                PushEnginePrintf("Texture dropped: %s", name.c_str());
+            }
+            else if (std::find(model_ext.begin(), model_ext.end(), ext) != model_ext.end())
+            {
+                PushEnginePrintf("Model dropped: %s", name.c_str());
+            }
+            else
+            {
+                PushEnginePrintf("File dropped: %s", name.c_str());
+            }
+        }
+    }
+
+    // Forward event to ImGui backend
     ImGui_ImplSDL3_ProcessEvent(&event);
 }
