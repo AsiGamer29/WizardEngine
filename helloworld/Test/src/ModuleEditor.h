@@ -21,4 +21,7 @@ private:
     bool show_demo_window = true;
     bool show_test_window = true;
     bool show_about_window = false; // About window toggle
+
+    // Geometry loading menu helper
+    std::string requested_geometry; // name of the geometry requested to load
 };

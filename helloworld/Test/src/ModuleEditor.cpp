@@ -72,6 +72,24 @@ bool ModuleEditor::Update()
             ImGui::EndMenu();
         }
 
+        // New top-level Geometry menu
+        if (ImGui::BeginMenu("Geometry"))
+        {
+            if (ImGui::MenuItem("Cube"))
+            {
+                requested_geometry = "Cube"; // request geometry (actual loading not implemented)
+            }
+            if (ImGui::MenuItem("Sphere"))
+            {
+                requested_geometry = "Sphere"; // request geometry (actual loading not implemented)
+            }
+            if (ImGui::MenuItem("Plane"))
+            {
+                requested_geometry = "Plane"; // request geometry (actual loading not implemented)
+            }
+            ImGui::EndMenu();
+        }
+
         if (ImGui::BeginMenu("Help"))
         {
             if (ImGui::MenuItem("Documentation on GitHub"))
@@ -129,6 +147,13 @@ bool ModuleEditor::Update()
 
         ImGui::Checkbox("Show Demo Window", &show_demo_window);
 
+        // Show last requested geometry (for debugging / future connection)
+        if (!requested_geometry.empty())
+        {
+            ImGui::Separator();
+            ImGui::Text("Last requested geometry: %s", requested_geometry.c_str());
+        }
+
         ImGui::End();
     }
 
@@ -143,7 +168,7 @@ bool ModuleEditor::Update()
             ImGui::Text("Team:");
             ImGui::BulletText("Asier");
             ImGui::BulletText("Aniol");
-            ImGui::BulletText("Saüc");
+            ImGui::BulletText("Sauc");
             ImGui::Separator();
             ImGui::Text("Libraries:");
             ImGui::BulletText("SDL3");
