@@ -1,6 +1,7 @@
 #pragma once
 #include "Module.h"
 #include <SDL3/SDL.h>
+#include <string>
 
 class ModuleEditor : public Module
 {
@@ -19,4 +20,5 @@ public:
 private:
     bool show_demo_window = true;
     bool show_test_window = true;
+    bool show_about_window = false; // About window toggle
 };
