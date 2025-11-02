@@ -660,38 +660,27 @@ bool ModuleEditor::Update()
         }
 
         ImGui::Separator();
+
+        // Provide informational content for other modules instead of editable controls
         ImGui::Text("Renderer");
-        bool oldWire = settings.wireframe;
-        ImGui::Checkbox("Wireframe", &settings.wireframe);
-        if (oldWire != settings.wireframe)
-        {
-            auto& app = Application::GetInstance();
-            if (app.opengl)
-            {
-                if (settings.wireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-                else glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-            }
-            PushEnginePrintf("Wireframe %s", settings.wireframe ? "enabled" : "disabled");
-        }
-        ImGui::ColorEdit3("Clear Color", settings.clear_color);
+        ImGui::Indent();
+        ImGui::TextWrapped("The Renderer module handles drawing the scene using OpenGL.\nIt controls rendering modes (wireframe/fill), clear color, culling and depth testing. Use the Scene/Renderer configuration or debug options in the main UI to toggle wireframe or other renderer-specific debug views.");
+        ImGui::Unindent();
 
         ImGui::Separator();
+
         ImGui::Text("Input");
-        float oldSens = settings.mouse_sensitivity;
-        ImGui::SliderFloat("Mouse Sensitivity", &settings.mouse_sensitivity, 0.1f, 5.0f);
-        if (oldSens != settings.mouse_sensitivity)
-        {
-            PushEnginePrintf("Mouse sensitivity changed to %.2f", settings.mouse_sensitivity);
-        }
-        
+        ImGui::Indent();
+        ImGui::TextWrapped("The Input module processes keyboard, mouse and gamepad events and exposes settings such as mouse sensitivity. Changes here affect how user input is interpreted by camera and gameplay modules. To change bindings or advanced input behavior edit the Input module or add an input mapping UI in the future.");
+        ImGui::Unindent();
+
         ImGui::Separator();
+
         ImGui::Text("Textures");
-        int oldFilter = settings.texture_filter;
-        ImGui::Combo("Filter", &settings.texture_filter, "Nearest\0Linear\0");
-        if (oldFilter != settings.texture_filter)
-        {
-            PushEnginePrintf("Texture filter set to %s", settings.texture_filter == 0 ? "Nearest" : "Linear");
-        }
+        ImGui::Indent();
+        ImGui::TextWrapped("The Textures module is responsible for texture loading and sampling.\nFiltering (Nearest/Linear), mipmap generation and GPU upload behavior are controlled by the renderer/resource manager. Use the material/texture inspector to preview textures and change sampler settings where available.");
+        ImGui::Unindent();
+
         ImGui::End();
     }
 
