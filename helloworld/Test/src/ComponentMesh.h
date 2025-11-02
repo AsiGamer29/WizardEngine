@@ -43,6 +43,9 @@ public:
     // Renderizar
     void Draw();
 
+    // Debug: dibujar normales en pantalla
+    void DrawNormals(const glm::mat4& modelMatrix, float length = 0.1f);
+
     // Getters
     size_t GetVertexCount() const { return vertices.size(); }
     size_t GetIndexCount() const { return indices.size(); }

@@ -20,7 +20,7 @@
 #include <vector>
 
 OpenGL::OpenGL()
-    : glContext(nullptr), shader(nullptr), fbxModel(nullptr), rotationAngle(0.0f), texture(0),
+    : glContext(nullptr), shader(nullptr), debugShader(nullptr), fbxModel(nullptr), rotationAngle(0.0f), texture(0),
     gridVAO(0), gridVBO(0), gridLineCount(0), showGrid(true),
     currentGeometry(nullptr), isGeometryActive(false) {
 }
@@ -28,6 +28,7 @@ OpenGL::OpenGL()
 OpenGL::~OpenGL()
 {
     if (shader) delete shader;
+    if (debugShader) delete debugShader;
     if (fbxModel) delete fbxModel;
     if (currentGeometry) {
         currentGeometry->Cleanup();
@@ -156,6 +157,25 @@ void OpenGL::DrawGameObjects(GameObject* go)
 
         // Dibujar mesh
         mesh->Draw();
+
+        // Si el editor pidió mostrar normales, dibujarlas usando debugShader
+        if (app.moduleScene && app.moduleScene->GetDebugShowNormals())
+        {
+            if (debugShader)
+            {
+                debugShader->use();
+                // Pasar matrices a debug shader
+                glUniformMatrix4fv(glGetUniformLocation(debugShader->ID, "model"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+                glUniformMatrix4fv(glGetUniformLocation(debugShader->ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
+                glUniformMatrix4fv(glGetUniformLocation(debugShader->ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+
+                // Color para normales
+                glUniform3f(glGetUniformLocation(debugShader->ID, "color"), 1.0f, 0.0f, 0.0f);
+
+                // Llamar a DrawNormals del mesh
+                mesh->DrawNormals(modelMatrix, 0.05f);
+            }
+        }
     }
 
     // Dibujar hijos recursivamente
@@ -285,6 +305,27 @@ bool OpenGL::Start()
     )";
 
     shader = new Shader(vertexShaderSource, fragmentShaderSource);
+
+    // Debug shader for drawing normals (simple colored lines)
+    const char* debugVert = R"(
+        #version 330 core
+        layout(location = 0) in vec3 aPos;
+        uniform mat4 model;
+        uniform mat4 view;
+        uniform mat4 projection;
+        void main() {
+            gl_Position = projection * view * model * vec4(aPos, 1.0);
+        }
+    )";
+    const char* debugFrag = R"(
+        #version 330 core
+        out vec4 FragColor;
+        uniform vec3 color;
+        void main() {
+            FragColor = vec4(color, 1.0);
+        }
+    )";
+    debugShader = new Shader(debugVert, debugFrag);
 
     // Load default texture
     texture = Texture::LoadTexture("../Assets/Textures/wall.jpg");
@@ -546,6 +587,12 @@ bool OpenGL::CleanUp()
     {
         delete shader;
         shader = nullptr;
+    }
+
+    if (debugShader)
+    {
+        delete debugShader;
+        debugShader = nullptr;
     }
 
     if (glContext)

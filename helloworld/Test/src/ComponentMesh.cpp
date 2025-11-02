@@ -126,12 +126,58 @@ void ComponentMesh::Draw()
     glBindVertexArray(0);
 }
 
+// NUEVO: Dibujar normales como líneas. Crea un VBO temporal con pares (pos, pos+normal*length)
+void ComponentMesh::DrawNormals(const glm::mat4& modelMatrix, float length)
+{
+    if (vertices.empty()) return;
+
+    std::vector<float> lines;
+    lines.reserve(vertices.size() * 6);
+
+    for (const auto& v : vertices)
+    {
+        glm::vec3 p = v.Position;
+        glm::vec3 n = v.Normal;
+        glm::vec3 p2 = p + n * length;
+
+        // P1
+        lines.push_back(p.x);
+        lines.push_back(p.y);
+        lines.push_back(p.z);
+        // P2
+        lines.push_back(p2.x);
+        lines.push_back(p2.y);
+        lines.push_back(p2.z);
+    }
+
+    // Crear buffers temporales
+    GLuint tmpVAO = 0, tmpVBO = 0;
+    glGenVertexArrays(1, &tmpVAO);
+    glGenBuffers(1, &tmpVBO);
+
+    glBindVertexArray(tmpVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, tmpVBO);
+    glBufferData(GL_ARRAY_BUFFER, lines.size() * sizeof(float), lines.data(), GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+
+    // Usar estado fijo: color blanco para las normales y dibujar líneas
+    glDisable(GL_TEXTURE_2D);
+    glLineWidth(1.0f);
+    // Asumimos que se usa un shader ya activo que respeta la matriz model/view/projection
+    glBindVertexArray(tmpVAO);
+    glDrawArrays(GL_LINES, 0, (GLsizei)(lines.size() / 3));
+    glBindVertexArray(0);
+
+    // Limpiar
+    glDeleteBuffers(1, &tmpVBO);
+    glDeleteVertexArrays(1, &tmpVAO);
+}
+
 void ComponentMesh::OnEditor()
 {
     // TODO: Implementar con ImGui
-    // ImGui::Text("Vertices: %d", numVertices);
-    // ImGui::Text("Indices: %d", numIndices);
-    // ImGui::Text("Triangles: %d", numIndices / 3);
 }
 
 void ComponentMesh::CleanupBuffers()

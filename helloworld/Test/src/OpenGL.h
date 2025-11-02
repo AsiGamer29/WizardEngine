@@ -13,6 +13,7 @@ class OpenGL : public Module
 private:
     void* glContext;
     Shader* shader;
+    Shader* debugShader; // shader para debug (normales)
     Model* fbxModel;
 
     glm::mat4 modelMatrix;
