@@ -48,7 +48,7 @@ bool Window::Start()
     }
 
     SDL_GL_MakeCurrent(window, context);
-    SDL_GL_SetSwapInterval(1); // Enable vsync
+    SDL_GL_SetSwapInterval(vsync ? 1 : 0);
 
     return true;
 }
@@ -98,4 +98,19 @@ void Window::GetWindowSize(int& width, int& height) const
 int Window::GetScale() const
 {
     return scale;
+}
+void Window::SetWindowSize(int w, int h)
+{
+    if (window)
+    {
+        SDL_SetWindowSize(window, w, h);
+        width = w;
+        height = h;
+    }
+}
+
+void Window::SetVSync(bool enabled)
+{
+    vsync = enabled;
+    SDL_GL_SetSwapInterval(vsync ? 1 : 0);
 }

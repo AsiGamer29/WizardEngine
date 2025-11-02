@@ -34,7 +34,7 @@ public:
     vector<unsigned int> indices;
     vector<MeshTexture>  textures;
     unsigned int VAO;
-
+   
     glm::mat4 modelMatrix = glm::mat4(1.0f);
 
     // constructor

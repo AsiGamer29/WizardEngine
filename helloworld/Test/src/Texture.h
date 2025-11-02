@@ -8,6 +8,7 @@
 
 class Texture {
 public:
+
     static unsigned int LoadTexture(const char* path);
     static unsigned int LoadDDSTexture(const char* path);
     static unsigned int CreateCheckerboardTexture(int width, int height, int cellSize);

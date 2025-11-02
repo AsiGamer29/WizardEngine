@@ -3,23 +3,26 @@
 
 Application::Application() : isRunning(true)
 {
-    std::cout << "Application Constructor" << std::endl;
+    
 
+    std::cout << "Application Constructor" << std::endl;
     window = std::make_shared<Window>();
     input = std::make_shared<Input>();
     opengl = std::make_shared<OpenGL>();
     editor = std::make_shared<ModuleEditor>();
-
+    moduleScene = std::make_shared<ModuleScene>();
     camera = std::make_shared<Camera>(
         glm::vec3(0.0f, 0.0f, 5.0f),
         glm::vec3(0.0f, 1.0f, 0.0f),
         -90.0f, 0.0f
     );
-
+    
     AddModule(std::static_pointer_cast<Module>(window));
     AddModule(std::static_pointer_cast<Module>(input));
     AddModule(std::static_pointer_cast<Module>(opengl));
+    AddModule(std::static_pointer_cast<Module>(moduleScene));
     AddModule(std::static_pointer_cast<Module>(editor));
+
 }
 
 Application& Application::GetInstance()

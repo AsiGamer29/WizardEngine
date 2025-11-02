@@ -4,9 +4,105 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_opengl3.h"
 #include <SDL3/SDL.h>
+#include <algorithm>
+#include <sstream>
+
+// Includes para crear GameObjects con geometría
+#include "GeometryGenerator.h"
+#include "GameObject.h"
+#include "ComponentTransform.h"
+#include "ComponentMesh.h"
+#include "ComponentMaterial.h"
+
+// ============================================
+// FUNCIÓN HELPER PARA CREAR GAMEOBJECTS CON GEOMETRÍA
+// ============================================
+static void CreateGeometryGameObject(const std::string& geometryType) {
+    auto& app = Application::GetInstance();
+
+    if (!app.moduleScene) {
+        std::cerr << "ModuleScene no está inicializado" << std::endl;
+        return;
+    }
+
+    // Crear un nombre único para el GameObject
+    static int geometryCounter = 0;
+    std::string objectName = geometryType + "_" + std::to_string(++geometryCounter);
+
+    // Crear el GameObject usando ModuleScene
+    GameObject* gameObject = app.moduleScene->CreateGameObject(objectName.c_str());
+
+    if (!gameObject) {
+        std::cerr << "Error al crear GameObject" << std::endl;
+        return;
+    }
+
+    // COMPONENTE TRANSFORM (normalmente GameObject ya lo crea por defecto)
+    ComponentTransform* transform = static_cast<ComponentTransform*>(
+        gameObject->GetComponent(ComponentType::TRANSFORM)
+        );
+
+    if (!transform) {
+        transform = static_cast<ComponentTransform*>(
+            gameObject->CreateComponent(ComponentType::TRANSFORM)
+            );
+    }
+
+    if (transform) {
+        transform->SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
+        transform->SetScale(glm::vec3(1.0f, 1.0f, 1.0f));
+        transform->SetRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+    }
+
+    // COMPONENTE MESH
+    ComponentMesh* meshComp = static_cast<ComponentMesh*>(
+        gameObject->CreateComponent(ComponentType::MESH)
+        );
+
+    if (meshComp) {
+        // Crear la geometría según el tipo
+        MeshGeometry geom;
+
+        if (geometryType == "Cube") {
+            geom = GeometryGenerator::CreateCube(2.0f);
+        }
+        else if (geometryType == "Sphere") {
+            geom = GeometryGenerator::CreateSphere(1.0f, 32, 16);
+        }
+        else if (geometryType == "Cylinder") {
+            geom = GeometryGenerator::CreateCylinder(1.0f, 2.0f, 32);
+        }
+        else if (geometryType == "Pyramid") {
+            geom = GeometryGenerator::CreatePyramid(2.0f, 2.0f);
+        }
+        else if (geometryType == "Plane") {
+            geom = GeometryGenerator::CreatePlane(5.0f, 5.0f);
+        }
+
+        // Cargar la geometría en el componente mesh
+        meshComp->LoadFromGeometry(&geom);
+    }
+
+    // COMPONENTE MATERIAL
+    ComponentMaterial* materialComp = (ComponentMaterial*)gameObject->CreateComponent(ComponentType::MATERIAL);
+
+    if (materialComp) {
+        // Ya tiene textura checkerboard por defecto
+    }
+
+    std::cout << "GameObject creado: " << objectName << std::endl;
+}
+
+// ============================================
+// IMPLEMENTACIÓN DE LA CLASE ModuleEditor
+// ============================================
 
 ModuleEditor::ModuleEditor()
 {
+    // initialize fps history
+    fps_pos = 0;
+    fps_count = 0;
+    for (int i = 0; i < FPS_HISTORY_SIZE; ++i) fps_history[i] = 0.0f;
 }
 
 ModuleEditor::~ModuleEditor()
@@ -29,6 +125,21 @@ bool ModuleEditor::Start()
     // Get window and context from Application
     auto& app = Application::GetInstance();
 
+    // Initialize settings from actual modules
+    if (app.window)
+    {
+        settings.window_width = app.window->GetWidth();
+        settings.window_height = app.window->GetHeight();
+    }
+    if (app.opengl)
+    {
+        settings.wireframe = false; // No wireframe state exposed yet
+    }
+    if (app.camera)
+    {
+        settings.mouse_sensitivity = 1.0f; // camera has its own sensitivity internally; expose link later
+    }
+
     // Setup Platform/Renderer backends
     ImGui_ImplSDL3_InitForOpenGL(app.window->GetWindow(), app.window->GetContext());
     ImGui_ImplOpenGL3_Init("#version 330 core");
@@ -48,6 +159,12 @@ bool ModuleEditor::PreUpdate()
 
 bool ModuleEditor::Update()
 {
+    // record current FPS
+    float current_fps = ImGui::GetIO().Framerate;
+    fps_history[fps_pos] = current_fps;
+    fps_pos = (fps_pos + 1) % FPS_HISTORY_SIZE;
+    fps_count = std::min(fps_count + 1, FPS_HISTORY_SIZE);
+
     // Main menu bar
     if (ImGui::BeginMainMenuBar())
     {
@@ -69,35 +186,48 @@ bool ModuleEditor::Update()
             ImGui::MenuItem("Demo Window", NULL, &show_demo_window);
             ImGui::MenuItem("Test Window", NULL, &show_test_window);
             ImGui::MenuItem("About", NULL, &show_about_window);
+
+            // Configuration submenu inside View
+            if (ImGui::BeginMenu("Configuration"))
+            {
+                ImGui::MenuItem("Performance", NULL, &show_config_performance);
+                ImGui::MenuItem("Modules", NULL, &show_config_modules);
+                ImGui::MenuItem("System", NULL, &show_config_system);
+                ImGui::EndMenu();
+            }
+
             ImGui::EndMenu();
         }
 
+        // ============================================
+        // MENÚ GEOMETRY - MODIFICADO PARA CREAR GAMEOBJECTS
+        // ============================================
         if (ImGui::BeginMenu("Geometry"))
         {
             if (ImGui::MenuItem("Cube"))
             {
                 requested_geometry = "Cube";
-                Application::GetInstance().opengl->LoadGeometry("Cube");
+                CreateGeometryGameObject("Cube");
             }
             if (ImGui::MenuItem("Sphere"))
             {
                 requested_geometry = "Sphere";
-                Application::GetInstance().opengl->LoadGeometry("Sphere");
+                CreateGeometryGameObject("Sphere");
             }
             if (ImGui::MenuItem("Cylinder"))
             {
                 requested_geometry = "Cylinder";
-                Application::GetInstance().opengl->LoadGeometry("Cylinder");
+                CreateGeometryGameObject("Cylinder");
             }
             if (ImGui::MenuItem("Pyramid"))
             {
                 requested_geometry = "Pyramid";
-                Application::GetInstance().opengl->LoadGeometry("Pyramid");
+                CreateGeometryGameObject("Pyramid");
             }
             if (ImGui::MenuItem("Plane"))
             {
                 requested_geometry = "Plane";
-                Application::GetInstance().opengl->LoadGeometry("Plane");
+                CreateGeometryGameObject("Plane");
             }
             ImGui::EndMenu();
         }
@@ -165,6 +295,112 @@ bool ModuleEditor::Update()
             ImGui::Text("Last requested geometry: %s", requested_geometry.c_str());
         }
 
+        ImGui::End();
+    }
+
+    // Config: Performance (FPS graph)
+    if (show_config_performance)
+    {
+        ImGui::Begin("Performance", &show_config_performance);
+        // prepare data order for plot (ImGui expects 0..count-1)
+        int count = fps_count;
+        int offset = (fps_pos >= count) ? fps_pos - count : (fps_pos + FPS_HISTORY_SIZE - count);
+        // If buffer wrapped, present contiguous data by constructing a temporary array
+        if (offset + count <= FPS_HISTORY_SIZE)
+        {
+            ImGui::PlotLines("FPS", fps_history + offset, count, 0, NULL, 0.0f, 240.0f, ImVec2(0, 80));
+        }
+        else
+        {
+            // create temporary array
+            static float temp[FPS_HISTORY_SIZE];
+            for (int i = 0; i < count; ++i)
+                temp[i] = fps_history[(offset + i) % FPS_HISTORY_SIZE];
+            ImGui::PlotLines("FPS", temp, count, 0, NULL, 0.0f, 240.0f, ImVec2(0, 80));
+        }
+        ImGui::Text("Current: %.1f FPS", fps_history[(fps_pos + FPS_HISTORY_SIZE - 1) % FPS_HISTORY_SIZE]);
+        ImGui::End();
+    }
+
+    // Config: Modules (settings)
+    if (show_config_modules)
+    {
+        ImGui::Begin("Modules Configuration", &show_config_modules);
+        ImGui::Text("Window");
+        int oldW = settings.window_width;
+        int oldH = settings.window_height;
+        ImGui::SliderInt("Width", &settings.window_width, 640, 3840);
+        ImGui::SliderInt("Height", &settings.window_height, 480, 2160);
+        if (oldW != settings.window_width || oldH != settings.window_height)
+        {
+            // apply to real window
+            auto& app = Application::GetInstance();
+            if (app.window) app.window->SetWindowSize(settings.window_width, settings.window_height);
+        }
+
+        bool oldVsync = settings.vsync;
+        ImGui::Checkbox("VSync", &settings.vsync);
+        if (oldVsync != settings.vsync)
+        {
+            auto& app = Application::GetInstance();
+            if (app.window) app.window->SetVSync(settings.vsync);
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Renderer");
+        bool oldWire = settings.wireframe;
+        ImGui::Checkbox("Wireframe", &settings.wireframe);
+        if (oldWire != settings.wireframe)
+        {
+            auto& app = Application::GetInstance();
+            if (app.opengl)
+            {
+                if (settings.wireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+                else glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+            }
+        }
+        ImGui::ColorEdit3("Clear Color", settings.clear_color);
+        // Note: apply clear color could be used by OpenGL module; here just store
+
+        ImGui::Separator();
+        ImGui::Text("Input");
+        float oldSens = settings.mouse_sensitivity;
+        ImGui::SliderFloat("Mouse Sensitivity", &settings.mouse_sensitivity, 0.1f, 5.0f);
+        if (oldSens != settings.mouse_sensitivity)
+        {
+            auto& app = Application::GetInstance();
+            if (app.camera)
+            {
+                // Camera currently stores sensitivity privately; for now we can hack by updating camera's private field if it were public.
+                // As a safe approach, we can expose camera sensitivity setter later. For now store value for eventual use.
+            }
+        }
+        ImGui::Separator();
+        ImGui::Text("Textures");
+        ImGui::Combo("Filter", &settings.texture_filter, "Nearest\0Linear\0");
+        ImGui::End();
+    }
+
+    // Config: System info
+    if (show_config_system)
+    {
+        ImGui::Begin("System Info", &show_config_system);
+        ImGui::Text("Platform: %s", SDL_GetPlatform());
+
+        int sdl_ver = SDL_GetVersion();
+        int sdl_major = sdl_ver / 1000000;
+        int sdl_minor = (sdl_ver / 1000) % 1000;
+        int sdl_patch = sdl_ver % 1000;
+        ImGui::Text("SDL Version: %d.%d.%d", sdl_major, sdl_minor, sdl_patch);
+
+        ImGui::Text("CPU Count: %d", SDL_GetNumLogicalCPUCores());
+        ImGui::Text("CPU Cache Line Size: %d bytes", SDL_GetCPUCacheLineSize());
+        ImGui::Text("System RAM (MB): %d", SDL_GetSystemRAM());
+
+        const char* glver = (const char*)glGetString(GL_VERSION);
+        ImGui::Text("OpenGL Version: %s", glver ? glver : "Unknown");
+
+        ImGui::Text("DevIL: not detected (placeholder)");
         ImGui::End();
     }
 
