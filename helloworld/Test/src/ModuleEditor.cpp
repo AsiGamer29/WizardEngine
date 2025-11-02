@@ -600,7 +600,15 @@ bool ModuleEditor::Update()
     if (show_console_window)
     {
         ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Console", &show_console_window);
+
+        
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImVec2 consolePos = ImVec2(viewport->WorkPos.x + 10.0f, viewport->WorkPos.y + viewport->WorkSize.y - 10.0f);
+        ImGui::SetNextWindowPos(consolePos, ImGuiCond_Always, ImVec2(0.0f, 1.0f));
+
+        ImGuiWindowFlags consoleFlags = ImGuiWindowFlags_NoMove;
+
+        ImGui::Begin("Console", &show_console_window, consoleFlags);
 
         ImGui::Checkbox("Auto-scroll", &engine_log_auto_scroll);
 
