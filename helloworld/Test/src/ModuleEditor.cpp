@@ -384,8 +384,14 @@ bool ModuleEditor::Update()
     // Hierarchy window
     if (show_hierarchy_window)
     {
-        ImGui::SetNextWindowSize(ImVec2(250, 400), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Hierarchy", &show_hierarchy_window);
+        
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImVec2 hierPos = ImVec2(viewport->WorkPos.x + 10.0f, viewport->WorkPos.y + 10.0f);
+        ImGui::SetNextWindowPos(hierPos, ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(250, 400), ImGuiCond_FirstUseEver); 
+        ImGuiWindowFlags hierFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse; 
+
+        ImGui::Begin("Hierarchy", NULL, hierFlags);
 
         // Obtener GameObjects desde ModuleScene
         auto& app = Application::GetInstance();
@@ -411,7 +417,7 @@ bool ModuleEditor::Update()
                 // Detectar click para seleccionar
                 if (ImGui::IsItemClicked())
                 {
-                    editor_selected_gameobject = go; // seleccion en editor (preparacion para funcionalidad)
+                    editor_selected_gameobject = go; 
                     app.moduleScene->SetSelectedGameObject(go);
                     PushEnginePrintf("Selected GameObject: %s", go->GetName());
                 }
@@ -433,13 +439,37 @@ bool ModuleEditor::Update()
     // Inspector window (nuevo)
     if (show_inspector_window)
     {
-        ImGui::SetNextWindowSize(ImVec2(300, 500), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Inspector", &show_inspector_window);
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        float inspectorW = 300.0f;
+        float inspectorH = 500.0f;
+        ImVec2 inspPos = ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - inspectorW - 10.0f, viewport->WorkPos.y + 10.0f);
+        ImGui::SetNextWindowPos(inspPos, ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(inspectorW, inspectorH), ImGuiCond_FirstUseEver); 
+        ImGuiWindowFlags inspFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse; 
+
+        ImGui::Begin("Inspector", &show_inspector_window, inspFlags);
 
         auto& app = Application::GetInstance();
         GameObject* selected = nullptr;
         if (app.moduleScene)
             selected = app.moduleScene->GetSelectedGameObject();
+
+        
+        if ((void*)selected != inspectorOverrideTarget && inspectorOverrideTarget != nullptr)
+        {
+            
+            GameObject* prev = (GameObject*)inspectorOverrideTarget;
+            if (prev)
+            {
+                ComponentMaterial* prevMat = prev->GetComponent<ComponentMaterial>();
+                if (prevMat)
+                {
+                    prevMat->ClearOverrideTexture();
+                }
+            }
+            inspectorOverrideTarget = nullptr;
+            inspector_show_checkerboard = false;
+        }
 
         if (!selected)
         {
@@ -515,7 +545,6 @@ bool ModuleEditor::Update()
             }
 
             // --- Texture Section ---
-            static bool show_checkerboard_preview = false;
             if (ImGui::CollapsingHeader("Texture", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 ComponentMaterial* mat = selected->GetComponent<ComponentMaterial>();
@@ -528,23 +557,34 @@ bool ModuleEditor::Update()
                     ImGui::Text("Path: %s", path ? path : "(none)");
                     ImGui::Text("Size: %dx%d", w, h);
 
-                    ImGui::Checkbox("Show default checkerboard", &show_checkerboard_preview);
+                   
+                    bool old = inspector_show_checkerboard;
+                    ImGui::Checkbox("Use default checkerboard in scene", &inspector_show_checkerboard);
 
-                    // Mostrar la textura en ImGui (si está disponible)
-                    GLuint texID = mat->GetTextureID();
-                    if (show_checkerboard_preview || texID == 0)
+                    if (inspector_show_checkerboard != old)
                     {
-                        // Mostrar la textura checkerboard generada por ComponentMaterial por defecto
-                        // Comprobamos si mat tiene una textura válida; si no, CreateCheckerboard en Texture
-                        GLuint cb = Texture::CreateCheckerboardTexture(128, 128, 16);
-                        ImGui::Image((ImTextureID)(intptr_t)cb, ImVec2(128, 128));
-                        // No eliminamos cb aquí porque Texture::CreateCheckerboardTexture genera una textura nueva cada vez.
-                        // En un sistema completo deberías cachearla y liberarla en Cleanup.
+                        if (inspector_show_checkerboard)
+                        {
+                            // enable override on selected material
+                            if (inspectorCheckerTex == 0)
+                            {
+                                inspectorCheckerTex = Texture::CreateCheckerboardTexture(512, 512, 32);
+                            }
+
+                            mat->SetOverrideTexture(inspectorCheckerTex, false);
+                            inspectorOverrideTarget = (void*)selected;
+                        }
+                        else
+                        {
+                            // disable override
+                            mat->ClearOverrideTexture();
+                            inspectorOverrideTarget = nullptr;
+                        }
                     }
-                    else
-                    {
-                        ImGui::Image((ImTextureID)(intptr_t)texID, ImVec2(128, 128));
-                    }
+
+                    
+                    GLuint previewTex = mat->GetTextureID();
+                    ImGui::Image((ImTextureID)(intptr_t)previewTex, ImVec2(128, 128));
                 }
                 else
                 {

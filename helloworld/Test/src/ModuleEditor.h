@@ -33,6 +33,11 @@ private:
     bool show_hierarchy_window = true; // Jerarquía window toggle
     bool show_inspector_window = true; // Inspector window toggle (new)
 
+    // Inspector checkerboard override state
+    bool inspector_show_checkerboard = false; // when true, apply override to selected GO
+    unsigned int inspectorCheckerTex = 0;    // cached checkerboard texture used for override/preview
+    void* inspectorOverrideTarget = nullptr; // GameObject* stored as void* to avoid header include cycles
+
     // Geometry loading menu helper
     std::string requested_geometry; // name of the geometry requested to load
 

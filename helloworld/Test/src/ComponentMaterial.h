@@ -13,6 +13,10 @@ private:
     int height;
     int channels;
 
+    // Optional override texture used only for rendering (not replacing original texture)
+    GLuint overrideTextureID = 0;
+    bool overrideTextureOwned = false;
+
 public:
     ComponentMaterial(GameObject* owner);
     ~ComponentMaterial();
@@ -22,6 +26,11 @@ public:
 
     // Asigna una textura ya cargada (para usar con tu sistema actual)
     void SetTexture(GLuint texID, const char* path = "");
+
+    // Override: asigna una textura temporal para usar en Bind() sin perder la referencia original
+    void SetOverrideTexture(GLuint texID, bool takeOwnership = false);
+    void ClearOverrideTexture();
+    GLuint GetOverrideTextureID() const { return overrideTextureID; }
 
     void Bind();
     void Unbind();

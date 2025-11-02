@@ -7,7 +7,7 @@
 
 ComponentMaterial::ComponentMaterial(GameObject* owner)
     : Component(owner, ComponentType::MATERIAL),
-    textureID(0), width(0), height(0), channels(0)
+    textureID(0), width(0), height(0), channels(0), overrideTextureID(0), overrideTextureOwned(false)
 {
     // Crear textura checkerboard por defecto
     textureID = Texture::CreateCheckerboardTexture(512, 512, 32);
@@ -112,12 +112,40 @@ void ComponentMaterial::SetTexture(GLuint texID, const char* path)
         texturePath = "external_texture";
 }
 
+void ComponentMaterial::SetOverrideTexture(GLuint texID, bool takeOwnership)
+{
+    // Si ya hay una override, liberarla si la poseemos
+    if (overrideTextureID != 0 && overrideTextureOwned)
+    {
+        if (glIsTexture(overrideTextureID))
+            glDeleteTextures(1, &overrideTextureID);
+    }
+
+    overrideTextureID = texID;
+    overrideTextureOwned = takeOwnership;
+}
+
+void ComponentMaterial::ClearOverrideTexture()
+{
+    if (overrideTextureID != 0 && overrideTextureOwned)
+    {
+        if (glIsTexture(overrideTextureID))
+            glDeleteTextures(1, &overrideTextureID);
+    }
+    overrideTextureID = 0;
+    overrideTextureOwned = false;
+}
+
 void ComponentMaterial::Bind()
 {
-    if (textureID != 0)
+    GLuint toBind = textureID;
+    if (overrideTextureID != 0)
+        toBind = overrideTextureID;
+
+    if (toBind != 0)
     {
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, textureID);
+        glBindTexture(GL_TEXTURE_2D, toBind);
     }
 }
 
@@ -129,16 +157,23 @@ void ComponentMaterial::Unbind()
 void ComponentMaterial::OnEditor()
 {
     // TODO: Implementar con ImGui cuando hagas el inspector
-    // ImGui::Text("Texture: %s", texturePath.c_str());
-    // ImGui::Text("Size: %dx%d", width, height);
-    // ImGui::Image((void*)(intptr_t)textureID, ImVec2(100, 100));
 }
 
 void ComponentMaterial::CleanUp()
 {
+    // Limpiar override primero
+    if (overrideTextureID != 0 && overrideTextureOwned)
+    {
+        if (glIsTexture(overrideTextureID))
+            glDeleteTextures(1, &overrideTextureID);
+        overrideTextureID = 0;
+        overrideTextureOwned = false;
+    }
+
     if (textureID != 0)
     {
-        glDeleteTextures(1, &textureID);
+        if (glIsTexture(textureID))
+            glDeleteTextures(1, &textureID);
         textureID = 0;
     }
 }
