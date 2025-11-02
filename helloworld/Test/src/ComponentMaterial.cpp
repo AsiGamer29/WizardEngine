@@ -100,11 +100,6 @@ void ComponentMaterial::LoadTexture(const char* path)
 
 void ComponentMaterial::SetTexture(GLuint texID, const char* path)
 {
-    if (textureID != 0 && textureID != texID)
-    {
-        glDeleteTextures(1, &textureID);
-    }
-
     textureID = texID;
     if (path && strlen(path) > 0)
         texturePath = path;

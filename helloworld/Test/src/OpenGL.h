@@ -2,6 +2,9 @@
 #include "Module.h"
 #include "Shader.h"
 #include <string>
+#include <vector>
+#include <set>
+#include <iostream>
 #include <glm/glm.hpp>
 
 class Model;
@@ -50,6 +53,8 @@ public:
     bool CleanUp() override;
 
     void LoadGeometry(const std::string& type);
+
+    void CollectTexturesInUse(GameObject* go, std::set<GLuint>& texturesInUse);
 
     // Getters para el editor
     bool IsGridVisible() const { return showGrid; }

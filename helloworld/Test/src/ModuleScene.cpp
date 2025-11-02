@@ -154,21 +154,17 @@ void ModuleScene::LoadModel(const char* path)
 {
     std::cout << "[ModuleScene] Loading model: " << path << std::endl;
 
-    // Limpiar escena anterior (excepto root)
-    if (root)
+    // NO borrar nada previamente: cada modelo se añade al root
+    if (!root)
     {
-        std::vector<GameObject*> children = root->GetChildren();
-        for (GameObject* child : children)
-        {
-            DestroyGameObject(child);
-        }
+        root = new GameObject("Scene Root");
+        allGameObjects.push_back(root);
     }
 
     // Crear Assimp importer
-    Assimp::Importer importer;
+    Assimp::Importer* importer = new Assimp::Importer();
 
-    // Cargar escena con opciones de post-procesamiento
-    const aiScene* scene = importer.ReadFile(path,
+    const aiScene* scene = importer->ReadFile(path,
         aiProcess_Triangulate |
         aiProcess_FlipUVs |
         aiProcess_GenNormals |
@@ -176,24 +172,24 @@ void ModuleScene::LoadModel(const char* path)
 
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
     {
-        std::cerr << "[ModuleScene] ERROR loading model: " << importer.GetErrorString() << std::endl;
+        std::cerr << "[ModuleScene] ERROR loading model: " << importer->GetErrorString() << std::endl;
+        delete importer;
         return;
     }
 
-    // Obtener directorio base para texturas
     std::string pathStr(path);
     std::string basePath = pathStr.substr(0, pathStr.find_last_of("/\\"));
 
-    std::cout << "[ModuleScene] Model loaded successfully" << std::endl;
-    std::cout << "[ModuleScene] - Meshes: " << scene->mNumMeshes << std::endl;
-    std::cout << "[ModuleScene] - Materials: " << scene->mNumMaterials << std::endl;
-    std::cout << "[ModuleScene] - Base path: " << basePath << std::endl;
-
-    // Cargar jerarquía desde el nodo raíz de Assimp
+    // Cada modelo se añade al root, como nuevo GameObject
     LoadFromAssimp(scene, scene->mRootNode, root, basePath);
 
     std::cout << "[ModuleScene] Model hierarchy loaded" << std::endl;
+
+    // IMPORTANTE: no destruir el importer hasta que termines de usar la escena
+    // (o usar Assimp::Importer como variable local, no puntero)
+    delete importer;
 }
+
 
 void ModuleScene::LoadFromAssimp(const aiScene* scene, const aiNode* node, GameObject* parent, const std::string& basePath)
 {
