@@ -49,7 +49,7 @@ The Editor Camera in Wizard Engine provides a smooth and flexible way to explore
 | Move Faster | **Hold Shift** while moving |
 | Look Around | **Hold Right Mouse Button (RMB)** and move the mouse |
 | Orbit Around Object | **Hold Alt + Left Mouse Button (LMB)** |
-| Pan | **Middle Mouse Button (MMB)** drag |
 | Zoom | **Mouse Scroll Wheel** |
 
 This control scheme allows developers to quickly inspect models, position objects, and navigate large scenes seamlessly.
+
