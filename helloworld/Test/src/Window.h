@@ -32,6 +32,6 @@ private:
     int width;
     int height;
     int scale;
-    bool vsync = true; // track current vsync state
+    
 
 };

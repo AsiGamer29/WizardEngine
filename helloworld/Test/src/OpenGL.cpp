@@ -13,8 +13,10 @@
 #include <iostream>
 #include <IL/il.h>
 #include <IL/ilu.h>
+#include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>  // ? Este sí que lo tienes (glm.lib incluye quaternion)
 #include <vector>
 
 OpenGL::OpenGL()
@@ -290,33 +292,65 @@ bool OpenGL::Start()
         texture = Texture::CreateCheckerboardTexture(512, 512, 32);
     }
 
-    // Load default model usando ModuleScene y escalarlo
+    // Crear el grid PRIMERO
+    CreateGrid(20);
+
+    // ? Load default model usando ModuleScene y escalarlo
     try
     {
+        std::cout << "Loading BakerHouse.fbx..." << std::endl;
+
         Application::GetInstance().moduleScene->LoadModel("../Assets/Models/BakerHouse.fbx");
 
-        //  NUEVO: Escalar el modelo inicial
+        // Escalar y rotar el modelo inicial
         GameObject* root = Application::GetInstance().moduleScene->GetRoot();
         if (root && root->GetChildren().size() > 0)
         {
             GameObject* bakerHouse = root->GetChildren().back();
-            ComponentTransform* transform = bakerHouse->GetComponent<ComponentTransform>();
+            std::cout << "BakerHouse GameObject name: " << bakerHouse->GetName() << std::endl;
 
+            ComponentTransform* transform = bakerHouse->GetComponent<ComponentTransform>();
             if (transform)
             {
-                transform->SetScale(glm::vec3(0.05f)); // Ajusta este valor según necesites
+                // Escala más pequeña
+                transform->SetScale(glm::vec3(0.01f)); // Ajusta según necesites
+
+                // Rotar 90 grados en el eje X para ponerlo de pie
+                // Usando glm::angleAxis que está en glm/gtc/quaternion.hpp
+                glm::quat rotation = glm::angleAxis(glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+                transform->SetRotation(rotation);
+
+                std::cout << "BakerHouse scaled to 0.01 and rotated -90° on X axis" << std::endl;
             }
+            else
+            {
+                std::cout << "BakerHouse has no transform component!" << std::endl;
+            }
+
+            // Verificar que tenga mesh
+            ComponentMesh* mesh = bakerHouse->GetComponent<ComponentMesh>();
+            if (mesh)
+            {
+                std::cout << "BakerHouse has mesh component" << std::endl;
+            }
+            else
+            {
+                std::cout << "BakerHouse has NO mesh component!" << std::endl;
+            }
+        }
+        else
+        {
+            std::cout << "ERROR: Root has no children after loading model!" << std::endl;
         }
 
         std::cout << "Successfully loaded FBX model via ModuleScene" << std::endl;
     }
     catch (const std::exception& e)
     {
-        std::cerr << "Warning: Could not load FBX model - " << e.what() << std::endl;
+        std::cerr << "ERROR: Could not load FBX model - " << e.what() << std::endl;
     }
 
-    // Crear el grid
-    CreateGrid(20);
+    isGeometryActive = false; // Asegurarnos de que NO se usa geometría procedural
 
     std::cout << "OpenGL initialization complete" << std::endl;
     return true;
@@ -361,7 +395,7 @@ bool OpenGL::Update()
                 // Cargar modelo usando ModuleScene (crea GameObjects automáticamente)
                 app.moduleScene->LoadModel(filePath.c_str());
 
-                // Escalar el modelo recién cargado
+                // Escalar y rotar el modelo recién cargado
                 GameObject* root = app.moduleScene->GetRoot();
                 if (root && root->GetChildren().size() > 0)
                 {
@@ -371,8 +405,12 @@ bool OpenGL::Update()
 
                     if (transform)
                     {
-                        // Ajusta este valor según necesites (0.01f = 1%, 0.05f = 5%, 0.1f = 10%)
-                        transform->SetScale(glm::vec3(0.008f)); 
+                        // Misma escala y rotación que al inicio
+                        transform->SetScale(glm::vec3(0.01f)); // Ajusta según necesites
+
+                        // Rotar para que esté de pie
+                        glm::quat rotation = glm::angleAxis(glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+                        transform->SetRotation(rotation);
                     }
                 }
 

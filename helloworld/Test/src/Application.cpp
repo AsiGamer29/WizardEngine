@@ -3,26 +3,31 @@
 
 Application::Application() : isRunning(true)
 {
-    
-
     std::cout << "Application Constructor" << std::endl;
+
+    // ORDEN CORRECTO: ModuleScene PRIMERO
+    moduleScene = std::make_shared<ModuleScene>();
     window = std::make_shared<Window>();
     input = std::make_shared<Input>();
     opengl = std::make_shared<OpenGL>();
     editor = std::make_shared<ModuleEditor>();
-    moduleScene = std::make_shared<ModuleScene>();
     camera = std::make_shared<Camera>(
         glm::vec3(0.0f, 0.0f, 5.0f),
         glm::vec3(0.0f, 1.0f, 0.0f),
         -90.0f, 0.0f
     );
-    
+
+    // ORDEN DE INICIALIZACIÓN (importante):
+    // 1. ModuleScene (crea el root)
+    // 2. Window
+    // 3. Input
+    // 4. OpenGL (necesita ModuleScene ya inicializado)
+    // 5. Editor (último)
+    AddModule(std::static_pointer_cast<Module>(moduleScene));
     AddModule(std::static_pointer_cast<Module>(window));
     AddModule(std::static_pointer_cast<Module>(input));
     AddModule(std::static_pointer_cast<Module>(opengl));
-    AddModule(std::static_pointer_cast<Module>(moduleScene));
     AddModule(std::static_pointer_cast<Module>(editor));
-
 }
 
 Application& Application::GetInstance()
@@ -43,32 +48,30 @@ bool Application::Awake()
 
 bool Application::Start()
 {
+    std::cout << "Starting Application..." << std::endl;
     bool result = true;
     for (const auto& module : moduleList) {
         result = module.get()->Start();
         if (!result) {
+            std::cerr << "Failed to start a module" << std::endl;
             break;
         }
     }
+    std::cout << "Application started successfully" << std::endl;
     return result;
 }
 
 bool Application::Update()
 {
     bool ret = true;
-
     if (input->GetWindowEvent(WE_QUIT) == true)
         ret = false;
-
     if (ret == true)
         ret = PreUpdate();
-
     if (ret == true)
         ret = DoUpdate();
-
     if (ret == true)
         ret = PostUpdate();
-
     return ret;
 }
 
@@ -79,7 +82,6 @@ bool Application::PreUpdate()
     opengl->PreUpdate();
     editor->PreUpdate();
     window->PreUpdate();
-
     return true;
 }
 
@@ -92,13 +94,11 @@ bool Application::DoUpdate()
             break;
         }
     }
-
     if (camera && input)
     {
         float deltaTime = 0.016f;
         camera->update(input.get(), deltaTime);
     }
-
     return result;
 }
 
@@ -108,14 +108,12 @@ bool Application::PostUpdate()
     editor->PostUpdate();
     window->PostUpdate();
     input->PostUpdate();
-
     return true;
 }
 
 bool Application::CleanUp()
 {
     std::cout << "Application CleanUp" << std::endl;
-
     bool result = true;
     for (const auto& module : moduleList) {
         result = module.get()->CleanUp();
