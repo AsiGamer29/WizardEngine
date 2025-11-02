@@ -300,13 +300,6 @@ bool ModuleEditor::Update()
         ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
         ImGui::Begin("Console", &show_console_window);
 
-        if (ImGui::Button("Clear"))
-        {
-            std::lock_guard<std::mutex> lock(engine_log_mutex);
-            engine_log.clear();
-            PushEngineLog("Console cleared by user.");
-        }
-        ImGui::SameLine();
         ImGui::Checkbox("Auto-scroll", &engine_log_auto_scroll);
 
         ImGui::Separator();
