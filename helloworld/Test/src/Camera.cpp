@@ -8,7 +8,7 @@ Camera::Camera(glm::vec3 position, glm::vec3 up, float yaw, float pitch)
     front(glm::vec3(0, 0, -1)), baseMovementSpeed(2.5f), movementSpeed(2.5f),
     sprintMultiplier(2.0f), mouseSensitivity(0.1f),
     zoom(45.0f), fov(45.0f), aspectRatio(16.0f / 9.0f),
-    nearPlane(0.1f), farPlane(100.0f),
+    nearPlane(0.1f), farPlane(1000.0f),
     orbitDistance(5.0f), orbitTarget(glm::vec3(0.0f))
 {
     updateCameraVectors();
