@@ -69,6 +69,7 @@ MeshGeometry GeometryGenerator::CreateSphere(float radius, int segments, int rin
 {
     MeshGeometry mesh;
 
+    // Generar vértices
     for (int ring = 0; ring <= rings; ++ring)
     {
         float phi = M_PI * float(ring) / float(rings);
@@ -83,13 +84,14 @@ MeshGeometry GeometryGenerator::CreateSphere(float radius, int segments, int rin
 
             GeomVertex vertex;
             vertex.Position = glm::vec3(x, y, z);
-            vertex.Normal = glm::normalize(glm::vec3(x, y, z));
+            vertex.Normal = glm::normalize(glm::vec3(x, y, z)); // Normal apunta HACIA FUERA
             vertex.TexCoords = glm::vec2(float(seg) / segments, float(ring) / rings);
 
             mesh.vertices.push_back(vertex);
         }
     }
 
+    // Generar índices - ORDEN CORRECTO (counter-clockwise)
     for (int ring = 0; ring < rings; ++ring)
     {
         for (int seg = 0; seg < segments; ++seg)
@@ -97,13 +99,15 @@ MeshGeometry GeometryGenerator::CreateSphere(float radius, int segments, int rin
             int current = ring * (segments + 1) + seg;
             int next = current + segments + 1;
 
+            // Primer triángulo (counter-clockwise desde fuera)
             mesh.indices.push_back(current);
-            mesh.indices.push_back(next);
             mesh.indices.push_back(current + 1);
+            mesh.indices.push_back(next);
 
+            // Segundo triángulo (counter-clockwise desde fuera)
             mesh.indices.push_back(current + 1);
-            mesh.indices.push_back(next);
             mesh.indices.push_back(next + 1);
+            mesh.indices.push_back(next);
         }
     }
 
@@ -115,67 +119,106 @@ MeshGeometry GeometryGenerator::CreateCylinder(float radius, float height, int s
     MeshGeometry mesh;
     float halfHeight = height / 2.0f;
 
-    // Top center
-    GeomVertex topCenter;
-    topCenter.Position = glm::vec3(0.0f, halfHeight, 0.0f);
-    topCenter.Normal = glm::vec3(0.0f, 1.0f, 0.0f);
-    topCenter.TexCoords = glm::vec2(0.5f, 0.5f);
-    mesh.vertices.push_back(topCenter);
-
-    // Bottom center
-    GeomVertex bottomCenter;
-    bottomCenter.Position = glm::vec3(0.0f, -halfHeight, 0.0f);
-    bottomCenter.Normal = glm::vec3(0.0f, -1.0f, 0.0f);
-    bottomCenter.TexCoords = glm::vec2(0.5f, 0.5f);
-    mesh.vertices.push_back(bottomCenter);
-
-    // Side vertices
+    // === LATERAL DEL CILINDRO ===
     for (int i = 0; i <= segments; ++i)
     {
         float theta = 2.0f * M_PI * float(i) / float(segments);
         float x = radius * cos(theta);
         float z = radius * sin(theta);
 
-        // Top ring
+        glm::vec3 normal = glm::normalize(glm::vec3(x, 0.0f, z));
+
+        // Par de vértices: superior e inferior
         GeomVertex topVertex;
         topVertex.Position = glm::vec3(x, halfHeight, z);
-        topVertex.Normal = glm::normalize(glm::vec3(x, 0.0f, z));
-        topVertex.TexCoords = glm::vec2(float(i) / segments, 1.0f);
+        topVertex.Normal = normal;
+        topVertex.TexCoords = glm::vec2(float(i) / float(segments), 1.0f);
         mesh.vertices.push_back(topVertex);
 
-        // Bottom ring
         GeomVertex bottomVertex;
         bottomVertex.Position = glm::vec3(x, -halfHeight, z);
-        bottomVertex.Normal = glm::normalize(glm::vec3(x, 0.0f, z));
-        bottomVertex.TexCoords = glm::vec2(float(i) / segments, 0.0f);
+        bottomVertex.Normal = normal;
+        bottomVertex.TexCoords = glm::vec2(float(i) / float(segments), 0.0f);
         mesh.vertices.push_back(bottomVertex);
     }
 
-    // Indices for sides
+    // Índices del lateral
     for (int i = 0; i < segments; ++i)
     {
-        int topCurrent = 2 + i * 2;
-        int topNext = topCurrent + 2;
-        int bottomCurrent = topCurrent + 1;
-        int bottomNext = bottomCurrent + 2;
+        int current = i * 2;
+        int next = current + 2;
 
-        mesh.indices.push_back(topCurrent);
-        mesh.indices.push_back(bottomCurrent);
-        mesh.indices.push_back(topNext);
+        // Triángulo 1
+        mesh.indices.push_back(current + 1);  // bottom current
+        mesh.indices.push_back(current);      // top current
+        mesh.indices.push_back(next);         // top next
 
-        mesh.indices.push_back(topNext);
-        mesh.indices.push_back(bottomCurrent);
-        mesh.indices.push_back(bottomNext);
+        // Triángulo 2
+        mesh.indices.push_back(current + 1);  // bottom current
+        mesh.indices.push_back(next);         // top next
+        mesh.indices.push_back(next + 1);     // bottom next
+    }
 
-        // Top cap
-        mesh.indices.push_back(0);
-        mesh.indices.push_back(topNext);
-        mesh.indices.push_back(topCurrent);
+    // === TAPA SUPERIOR ===
+    int topCapStart = mesh.vertices.size();
 
-        // Bottom cap
-        mesh.indices.push_back(1);
-        mesh.indices.push_back(bottomCurrent);
-        mesh.indices.push_back(bottomNext);
+    // Centro
+    GeomVertex topCenter;
+    topCenter.Position = glm::vec3(0.0f, halfHeight, 0.0f);
+    topCenter.Normal = glm::vec3(0.0f, 1.0f, 0.0f);
+    topCenter.TexCoords = glm::vec2(0.5f, 0.5f);
+    mesh.vertices.push_back(topCenter);
+
+    // Anillo superior
+    for (int i = 0; i <= segments; ++i)
+    {
+        float theta = 2.0f * M_PI * float(i) / float(segments);
+        float x = radius * cos(theta);
+        float z = radius * sin(theta);
+
+        GeomVertex v;
+        v.Position = glm::vec3(x, halfHeight, z);
+        v.Normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        v.TexCoords = glm::vec2(0.5f + 0.5f * x / radius, 0.5f + 0.5f * z / radius);
+        mesh.vertices.push_back(v);
+    }
+
+    for (int i = 0; i < segments; ++i)
+    {
+        mesh.indices.push_back(topCapStart);           // centro
+        mesh.indices.push_back(topCapStart + 1 + i + 1); // siguiente
+        mesh.indices.push_back(topCapStart + 1 + i);     // actual
+    }
+
+    // === TAPA INFERIOR ===
+    int bottomCapStart = mesh.vertices.size();
+
+    // Centro
+    GeomVertex bottomCenter;
+    bottomCenter.Position = glm::vec3(0.0f, -halfHeight, 0.0f);
+    bottomCenter.Normal = glm::vec3(0.0f, -1.0f, 0.0f);
+    bottomCenter.TexCoords = glm::vec2(0.5f, 0.5f);
+    mesh.vertices.push_back(bottomCenter);
+
+    // Anillo inferior
+    for (int i = 0; i <= segments; ++i)
+    {
+        float theta = 2.0f * M_PI * float(i) / float(segments);
+        float x = radius * cos(theta);
+        float z = radius * sin(theta);
+
+        GeomVertex v;
+        v.Position = glm::vec3(x, -halfHeight, z);
+        v.Normal = glm::vec3(0.0f, -1.0f, 0.0f);
+        v.TexCoords = glm::vec2(0.5f + 0.5f * x / radius, 0.5f - 0.5f * z / radius);
+        mesh.vertices.push_back(v);
+    }
+
+    for (int i = 0; i < segments; ++i)
+    {
+        mesh.indices.push_back(bottomCapStart);           // centro
+        mesh.indices.push_back(bottomCapStart + 1 + i);     // actual
+        mesh.indices.push_back(bottomCapStart + 1 + i + 1); // siguiente
     }
 
     return mesh;
@@ -186,26 +229,61 @@ MeshGeometry GeometryGenerator::CreatePyramid(float base, float height)
     MeshGeometry mesh;
     float halfBase = base / 2.0f;
 
-    GeomVertex vertices[5] = {
-        // Base
-        {{ -halfBase, 0.0f,  halfBase }, { 0.0f, -1.0f, 0.0f }, { 0.0f, 0.0f }},
-        {{  halfBase, 0.0f,  halfBase }, { 0.0f, -1.0f, 0.0f }, { 1.0f, 0.0f }},
-        {{  halfBase, 0.0f, -halfBase }, { 0.0f, -1.0f, 0.0f }, { 1.0f, 1.0f }},
-        {{ -halfBase, 0.0f, -halfBase }, { 0.0f, -1.0f, 0.0f }, { 0.0f, 1.0f }},
-        // Apex
-        {{ 0.0f, height, 0.0f }, { 0.0f, 1.0f, 0.0f }, { 0.5f, 0.5f }},
-    };
+    // Vértices de la base
+    glm::vec3 v0(-halfBase, 0.0f, halfBase);
+    glm::vec3 v1(halfBase, 0.0f, halfBase);
+    glm::vec3 v2(halfBase, 0.0f, -halfBase);
+    glm::vec3 v3(-halfBase, 0.0f, -halfBase);
+    glm::vec3 apex(0.0f, height, 0.0f);
 
-    unsigned int indices[18] = {
-        0,2,1,  0,3,2,  // Base
-        0,1,4,          // Front
-        1,2,4,          // Right
-        2,3,4,          // Back
-        3,0,4           // Left
-    };
+    // BASE (normal hacia abajo)
+    mesh.vertices.push_back({ v0, {0, -1, 0}, {0, 0} });
+    mesh.vertices.push_back({ v1, {0, -1, 0}, {1, 0} });
+    mesh.vertices.push_back({ v2, {0, -1, 0}, {1, 1} });
+    mesh.vertices.push_back({ v3, {0, -1, 0}, {0, 1} });
 
-    mesh.vertices.assign(vertices, vertices + 5);
-    mesh.indices.assign(indices, indices + 18);
+    mesh.indices.push_back(0); mesh.indices.push_back(2); mesh.indices.push_back(1);
+    mesh.indices.push_back(0); mesh.indices.push_back(3); mesh.indices.push_back(2);
+
+    // CARA FRONTAL (v0, v1, apex)
+    glm::vec3 nFront = glm::normalize(glm::cross(v1 - v0, apex - v0));
+    int baseFront = mesh.vertices.size();
+    mesh.vertices.push_back({ v0, nFront, {0, 0} });
+    mesh.vertices.push_back({ v1, nFront, {1, 0} });
+    mesh.vertices.push_back({ apex, nFront, {0.5f, 1} });
+    mesh.indices.push_back(baseFront);
+    mesh.indices.push_back(baseFront + 1);
+    mesh.indices.push_back(baseFront + 2);
+
+    // CARA DERECHA (v1, v2, apex)
+    glm::vec3 nRight = glm::normalize(glm::cross(v2 - v1, apex - v1));
+    int baseRight = mesh.vertices.size();
+    mesh.vertices.push_back({ v1, nRight, {0, 0} });
+    mesh.vertices.push_back({ v2, nRight, {1, 0} });
+    mesh.vertices.push_back({ apex, nRight, {0.5f, 1} });
+    mesh.indices.push_back(baseRight);
+    mesh.indices.push_back(baseRight + 1);
+    mesh.indices.push_back(baseRight + 2);
+
+    // CARA TRASERA (v2, v3, apex)
+    glm::vec3 nBack = glm::normalize(glm::cross(v3 - v2, apex - v2));
+    int baseBack = mesh.vertices.size();
+    mesh.vertices.push_back({ v2, nBack, {0, 0} });
+    mesh.vertices.push_back({ v3, nBack, {1, 0} });
+    mesh.vertices.push_back({ apex, nBack, {0.5f, 1} });
+    mesh.indices.push_back(baseBack);
+    mesh.indices.push_back(baseBack + 1);
+    mesh.indices.push_back(baseBack + 2);
+
+    // CARA IZQUIERDA (v3, v0, apex)
+    glm::vec3 nLeft = glm::normalize(glm::cross(v0 - v3, apex - v3));
+    int baseLeft = mesh.vertices.size();
+    mesh.vertices.push_back({ v3, nLeft, {0, 0} });
+    mesh.vertices.push_back({ v0, nLeft, {1, 0} });
+    mesh.vertices.push_back({ apex, nLeft, {0.5f, 1} });
+    mesh.indices.push_back(baseLeft);
+    mesh.indices.push_back(baseLeft + 1);
+    mesh.indices.push_back(baseLeft + 2);
 
     return mesh;
 }

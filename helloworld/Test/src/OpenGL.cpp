@@ -224,8 +224,10 @@ bool OpenGL::Start()
         return false;
     }
 
-    glDisable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
 
     // Initialize DevIL
     ilInit();
@@ -319,8 +321,6 @@ bool OpenGL::Start()
                 // Usando glm::angleAxis que está en glm/gtc/quaternion.hpp
                 glm::quat rotation = glm::angleAxis(glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
                 transform->SetRotation(rotation);
-
-                std::cout << "BakerHouse scaled to 0.01 and rotated -90° on X axis" << std::endl;
             }
             else
             {
@@ -350,7 +350,7 @@ bool OpenGL::Start()
         std::cerr << "ERROR: Could not load FBX model - " << e.what() << std::endl;
     }
 
-    isGeometryActive = false; // Asegurarnos de que NO se usa geometría procedural
+    isGeometryActive = false;
 
     std::cout << "OpenGL initialization complete" << std::endl;
     return true;
