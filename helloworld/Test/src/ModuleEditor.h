@@ -30,6 +30,8 @@ private:
     bool show_test_window = true;
     bool show_about_window = false; // About window toggle
     bool show_console_window = false; // Console window toggle
+    bool show_hierarchy_window = true; // Jerarquía window toggle
+    bool show_inspector_window = true; // Inspector window toggle (new)
 
     // Geometry loading menu helper
     std::string requested_geometry; // name of the geometry requested to load

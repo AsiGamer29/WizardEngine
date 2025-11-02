@@ -14,12 +14,22 @@
 #include "ComponentTransform.h"
 #include "ComponentMesh.h"
 #include "ComponentMaterial.h"
+#include "ModuleScene.h"
+#include "Texture.h"
+
+// Enable experimental GLM extensions used (quaternion utilities)
+#ifndef GLM_ENABLE_EXPERIMENTAL
+#define GLM_ENABLE_EXPERIMENTAL
+#endif
+#include <glm/gtx/quaternion.hpp>
 
 // Engine console storage definitions
 std::vector<std::string> ModuleEditor::engine_log;
 std::mutex ModuleEditor::engine_log_mutex;
 size_t ModuleEditor::engine_log_max_messages = 8192;
 bool ModuleEditor::engine_log_auto_scroll = true;
+
+static GameObject* editor_selected_gameobject = nullptr; // preparación para selección desde editor
 
 void ModuleEditor::PushEngineLog(const std::string& msg)
 {
@@ -230,11 +240,15 @@ bool ModuleEditor::Update()
             bool prev_test = show_test_window;
             bool prev_about = show_about_window;
             bool prev_console = show_console_window;
+            bool prev_hier = show_hierarchy_window;
+            bool prev_inspector = show_inspector_window;
 
             ImGui::MenuItem("Demo Window", NULL, &show_demo_window);
             ImGui::MenuItem("Test Window", NULL, &show_test_window);
             ImGui::MenuItem("About", NULL, &show_about_window);
             ImGui::MenuItem("Console", NULL, &show_console_window);
+            ImGui::MenuItem("Hierarchy", NULL, &show_hierarchy_window);
+            ImGui::MenuItem("Inspector", NULL, &show_inspector_window);
 
             if (prev_demo != show_demo_window)
                 PushEnginePrintf("Demo Window %s", show_demo_window ? "opened" : "closed");
@@ -244,6 +258,10 @@ bool ModuleEditor::Update()
                 PushEnginePrintf("About Window %s", show_about_window ? "opened" : "closed");
             if (prev_console != show_console_window)
                 PushEnginePrintf("Console Window %s", show_console_window ? "opened" : "closed");
+            if (prev_hier != show_hierarchy_window)
+                PushEnginePrintf("Hierarchy Window %s", show_hierarchy_window ? "opened" : "closed");
+            if (prev_inspector != show_inspector_window)
+                PushEnginePrintf("Inspector Window %s", show_inspector_window ? "opened" : "closed");
 
             // Configuration submenu inside View
             if (ImGui::BeginMenu("Configuration"))
@@ -361,6 +379,181 @@ bool ModuleEditor::Update()
         }
 
         ImGui::End();
+    }
+
+    // Hierarchy window
+    if (show_hierarchy_window)
+    {
+        ImGui::SetNextWindowSize(ImVec2(250, 400), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Hierarchy", &show_hierarchy_window);
+
+        // Obtener GameObjects desde ModuleScene
+        auto& app = Application::GetInstance();
+        if (app.moduleScene)
+        {
+            const std::vector<GameObject*>& all = app.moduleScene->GetAllGameObjects();
+
+            // Mostrar en lista plana por ahora
+            for (GameObject* go : all)
+            {
+                if (!go) continue;
+
+                ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_Leaf;
+                // marcar seleccionado
+                if (go == editor_selected_gameobject || go == app.moduleScene->GetSelectedGameObject())
+                {
+                    node_flags |= ImGuiTreeNodeFlags_Selected;
+                }
+
+                // Usamos TreeNodeEx para poder mostrar icono y seleccionar
+                bool node_open = ImGui::TreeNodeEx((void*)go, node_flags, "%s", go->GetName());
+
+                // Detectar click para seleccionar
+                if (ImGui::IsItemClicked())
+                {
+                    editor_selected_gameobject = go; // seleccion en editor (preparacion para funcionalidad)
+                    app.moduleScene->SetSelectedGameObject(go);
+                    PushEnginePrintf("Selected GameObject: %s", go->GetName());
+                }
+
+                if (node_open)
+                {
+                    ImGui::TreePop();
+                }
+            }
+        }
+        else
+        {
+            ImGui::Text("ModuleScene not available");
+        }
+
+        ImGui::End();
+    }
+
+    // Inspector window (nuevo)
+    if (show_inspector_window)
+    {
+        ImGui::SetNextWindowSize(ImVec2(300, 500), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Inspector", &show_inspector_window);
+
+        auto& app = Application::GetInstance();
+        GameObject* selected = nullptr;
+        if (app.moduleScene)
+            selected = app.moduleScene->GetSelectedGameObject();
+
+        if (!selected)
+        {
+            ImGui::TextDisabled("No GameObject selected");
+            ImGui::End();
+        }
+        else
+        {
+            ImGui::Text("Selected: %s", selected->GetName());
+            ImGui::Separator();
+
+            // --- Transform Section ---
+            if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                ComponentTransform* tr = selected->GetComponent<ComponentTransform>();
+                if (tr)
+                {
+                    glm::vec3 pos = tr->GetPosition();
+                    glm::vec3 scl = tr->GetScale();
+                    glm::quat rotQ = tr->GetRotation();
+                    glm::vec3 euler = glm::degrees(glm::eulerAngles(rotQ));
+
+                    float posArr[3] = { pos.x, pos.y, pos.z };
+                    if (ImGui::InputFloat3("Position", posArr))
+                    {
+                        tr->SetPosition(glm::vec3(posArr[0], posArr[1], posArr[2]));
+                    }
+
+                    float rotArr[3] = { euler.x, euler.y, euler.z };
+                    if (ImGui::InputFloat3("Rotation", rotArr))
+                    {
+                        // Convert back to quaternion
+                        glm::vec3 rads = glm::radians(glm::vec3(rotArr[0], rotArr[1], rotArr[2]));
+                        glm::quat newQ = glm::quat(rads);
+                        tr->SetRotation(newQ);
+                    }
+
+                    float sclArr[3] = { scl.x, scl.y, scl.z };
+                    if (ImGui::InputFloat3("Scale", sclArr))
+                    {
+                        tr->SetScale(glm::vec3(sclArr[0], sclArr[1], sclArr[2]));
+                    }
+                }
+                else
+                {
+                    ImGui::TextDisabled("No Transform component.");
+                }
+            }
+
+            // --- Mesh Section ---
+            static bool show_normals = false;
+            if (ImGui::CollapsingHeader("Mesh", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                ComponentMesh* mesh = selected->GetComponent<ComponentMesh>();
+                if (mesh)
+                {
+                    ImGui::Text("Vertices: %d", (int)mesh->GetVertexCount());
+                    ImGui::Text("Indices: %d", (int)mesh->GetIndexCount());
+                    ImGui::Text("Triangles: %d", (int)mesh->GetIndexCount() / 3);
+
+                    ImGui::Checkbox("Show Normals", &show_normals);
+
+                    // TODO: Integrar visualización de normales en renderer; por ahora guardar flag en ModuleScene
+                    if (app.moduleScene)
+                    {
+                        app.moduleScene->SetDebugShowNormals(show_normals);
+                    }
+                }
+                else
+                {
+                    ImGui::TextDisabled("No Mesh component.");
+                }
+            }
+
+            // --- Texture Section ---
+            static bool show_checkerboard_preview = false;
+            if (ImGui::CollapsingHeader("Texture", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                ComponentMaterial* mat = selected->GetComponent<ComponentMaterial>();
+                if (mat)
+                {
+                    const char* path = mat->GetTexturePath();
+                    int w = mat->GetWidth();
+                    int h = mat->GetHeight();
+
+                    ImGui::Text("Path: %s", path ? path : "(none)");
+                    ImGui::Text("Size: %dx%d", w, h);
+
+                    ImGui::Checkbox("Show default checkerboard", &show_checkerboard_preview);
+
+                    // Mostrar la textura en ImGui (si está disponible)
+                    GLuint texID = mat->GetTextureID();
+                    if (show_checkerboard_preview || texID == 0)
+                    {
+                        // Mostrar la textura checkerboard generada por ComponentMaterial por defecto
+                        // Comprobamos si mat tiene una textura válida; si no, CreateCheckerboard en Texture
+                        GLuint cb = Texture::CreateCheckerboardTexture(128, 128, 16);
+                        ImGui::Image((ImTextureID)(intptr_t)cb, ImVec2(128, 128));
+                        // No eliminamos cb aquí porque Texture::CreateCheckerboardTexture genera una textura nueva cada vez.
+                        // En un sistema completo deberías cachearla y liberarla en Cleanup.
+                    }
+                    else
+                    {
+                        ImGui::Image((ImTextureID)(intptr_t)texID, ImVec2(128, 128));
+                    }
+                }
+                else
+                {
+                    ImGui::TextDisabled("No Material component.");
+                }
+            }
+
+            ImGui::End();
+        }
     }
 
     // Console window

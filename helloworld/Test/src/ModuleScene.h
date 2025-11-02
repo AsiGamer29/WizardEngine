@@ -14,6 +14,9 @@ private:
     GameObject* selectedGameObject; // Para el inspector
     std::vector<GameObject*> allGameObjects; // Todos los GOs para facilitar búsqueda
 
+    // Debug visualization flags
+    bool debugShowNormals = false;
+
 public:
     ModuleScene();
     ~ModuleScene();
@@ -39,6 +42,10 @@ public:
     GameObject* GetSelectedGameObject() const { return selectedGameObject; }
     void SetSelectedGameObject(GameObject* go) { selectedGameObject = go; }
     const std::vector<GameObject*>& GetAllGameObjects() const { return allGameObjects; }
+
+    // Debug flags for editor
+    void SetDebugShowNormals(bool v) { debugShowNormals = v; }
+    bool GetDebugShowNormals() const { return debugShowNormals; }
 
 private:
     void LoadFromAssimp(const aiScene* scene, const aiNode* node, GameObject* parent, const std::string& basePath);
