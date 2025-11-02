@@ -324,7 +324,7 @@ bool OpenGL::Start()
     try
     {
         auto& app = Application::GetInstance();
-        app.moduleScene->LoadModel("../Assets/Models/BakerHouse.fbx");
+        app.moduleScene->LoadModel("Assets/Models/BakerHouse.fbx");
 
         GameObject* root = app.moduleScene->GetRoot();
         if (!root)
@@ -348,11 +348,11 @@ bool OpenGL::Start()
                 std::cout << "BakerHouse scaled and rotated to correct orientation" << std::endl;
             }
             // Cargar textura y aplicarla
-            GLuint bakerTexture = Texture::LoadTexture("../Assets/Textures/Baker_house.png");
+            GLuint bakerTexture = Texture::LoadTexture("Assets/Textures/Baker_house.png");
             if (!bakerTexture)
                 bakerTexture = Texture::CreateCheckerboardTexture(512, 512, 32);
 
-            ApplyTextureToGameObjects(bakerHouse, bakerTexture, "../Assets/Textures/Baker_house.png");
+            ApplyTextureToGameObjects(bakerHouse, bakerTexture, "Assets/Textures/Baker_house.png");
 
             // Seleccionar el GameObject
             app.moduleScene->SetSelectedGameObject(bakerHouse);
