@@ -26,12 +26,12 @@ public:
     static void PushEnginePrintf(const char* fmt, ...);
 
 private:
-    bool show_demo_window = true;
-    bool show_test_window = true;
+    bool show_demo_window = false;
+    bool show_test_window = false; 
     bool show_about_window = false; // About window toggle
-    bool show_console_window = false; // Console window toggle
+    bool show_console_window = true; // Console window toggle
     bool show_hierarchy_window = true; // Jerarquía window toggle
-    bool show_inspector_window = true; // Inspector window toggle (new)
+    bool show_inspector_window = true; // Inspector window toggle
 
     // Inspector checkerboard override state
     bool inspector_show_checkerboard = false; // when true, apply override to selected GO
