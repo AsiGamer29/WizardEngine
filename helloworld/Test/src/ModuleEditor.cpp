@@ -236,24 +236,16 @@ bool ModuleEditor::Update()
 
         if (ImGui::BeginMenu("View"))
         {
-            bool prev_demo = show_demo_window;
-            bool prev_test = show_test_window;
             bool prev_about = show_about_window;
             bool prev_console = show_console_window;
             bool prev_hier = show_hierarchy_window;
             bool prev_inspector = show_inspector_window;
 
-            ImGui::MenuItem("Demo Window", NULL, &show_demo_window);
-            ImGui::MenuItem("Test Window", NULL, &show_test_window);
             ImGui::MenuItem("About", NULL, &show_about_window);
             ImGui::MenuItem("Console", NULL, &show_console_window);
             ImGui::MenuItem("Hierarchy", NULL, &show_hierarchy_window);
             ImGui::MenuItem("Inspector", NULL, &show_inspector_window);
 
-            if (prev_demo != show_demo_window)
-                PushEnginePrintf("Demo Window %s", show_demo_window ? "opened" : "closed");
-            if (prev_test != show_test_window)
-                PushEnginePrintf("Test Window %s", show_test_window ? "opened" : "closed");
             if (prev_about != show_about_window)
                 PushEnginePrintf("About Window %s", show_about_window ? "opened" : "closed");
             if (prev_console != show_console_window)
@@ -337,14 +329,6 @@ bool ModuleEditor::Update()
         }
 
         ImGui::EndMainMenuBar();
-    }
-
-    // Show demo window
-    if (show_demo_window)
-    {
-        ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(550, 680), ImGuiCond_FirstUseEver);
-        ImGui::ShowDemoWindow(&show_demo_window);
     }
 
     // Show custom test window

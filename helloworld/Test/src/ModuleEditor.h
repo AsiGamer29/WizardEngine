@@ -27,7 +27,7 @@ public:
 
 private:
     bool show_demo_window = true;
-    bool show_test_window = true;
+    bool show_test_window = false; // Start closed
     bool show_about_window = false; // About window toggle
     bool show_console_window = false; // Console window toggle
     bool show_hierarchy_window = true; // Jerarquía window toggle
