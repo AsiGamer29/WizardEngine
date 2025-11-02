@@ -54,4 +54,6 @@ public:
     // Getters para el editor
     bool IsGridVisible() const { return showGrid; }
     void SetGridVisible(bool visible) { showGrid = visible; }
+    Shader* gridShader;
+    glm::vec3 gridColor = glm::vec3(0.5f, 0.5f, 0.5f);
 };

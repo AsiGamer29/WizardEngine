@@ -16,11 +16,12 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/quaternion.hpp>  // ? Este sí que lo tienes (glm.lib incluye quaternion)
+#include <glm/gtc/quaternion.hpp>
 #include <vector>
 
 OpenGL::OpenGL()
-    : glContext(nullptr), shader(nullptr), debugShader(nullptr), fbxModel(nullptr), rotationAngle(0.0f), texture(0),
+    : glContext(nullptr), shader(nullptr), debugShader(nullptr), gridShader(nullptr),
+    fbxModel(nullptr), rotationAngle(0.0f), texture(0),
     gridVAO(0), gridVBO(0), gridLineCount(0), showGrid(true),
     currentGeometry(nullptr), isGeometryActive(false) {
 }
@@ -29,6 +30,7 @@ OpenGL::~OpenGL()
 {
     if (shader) delete shader;
     if (debugShader) delete debugShader;
+    if (gridShader) delete gridShader;
     if (fbxModel) delete fbxModel;
     if (currentGeometry) {
         currentGeometry->Cleanup();
@@ -81,7 +83,8 @@ void OpenGL::DrawGrid()
 {
     if (!showGrid || gridVAO == 0) return;
 
-    shader->use();
+    // Usar shader dedicado del grid (sin texturas)
+    gridShader->use();
 
     Application& app = Application::GetInstance();
 
@@ -89,17 +92,13 @@ void OpenGL::DrawGrid()
     glm::mat4 view = app.camera->getViewMatrix();
     glm::mat4 projection = app.camera->getProjectionMatrix();
 
-    glUniformMatrix4fv(glGetUniformLocation(shader->ID, "model"), 1, GL_FALSE, glm::value_ptr(model));
-    glUniformMatrix4fv(glGetUniformLocation(shader->ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
-    glUniformMatrix4fv(glGetUniformLocation(shader->ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+    glUniformMatrix4fv(glGetUniformLocation(gridShader->ID, "model"), 1, GL_FALSE, glm::value_ptr(model));
+    glUniformMatrix4fv(glGetUniformLocation(gridShader->ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(glGetUniformLocation(gridShader->ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
 
-    glm::vec3 lightPos(0.0f, 50.0f, 0.0f);
-    glm::vec3 viewPos = app.camera->getPosition();
-    glm::vec3 lightColor(2.0f, 2.0f, 2.0f);
-
-    glUniform3fv(glGetUniformLocation(shader->ID, "lightPos"), 1, glm::value_ptr(lightPos));
-    glUniform3fv(glGetUniformLocation(shader->ID, "viewPos"), 1, glm::value_ptr(viewPos));
-    glUniform3fv(glGetUniformLocation(shader->ID, "lightColor"), 1, glm::value_ptr(lightColor));
+    // Color del grid (gris claro)
+    glm::vec3 gridColor(0.5f, 0.5f, 0.5f);
+    glUniform3fv(glGetUniformLocation(gridShader->ID, "gridColor"), 1, glm::value_ptr(gridColor));
 
     glBindVertexArray(gridVAO);
     glDrawArrays(GL_LINES, 0, gridLineCount);
@@ -172,8 +171,8 @@ void OpenGL::DrawGameObjects(GameObject* go)
                 // Color para normales
                 glUniform3f(glGetUniformLocation(debugShader->ID, "color"), 1.0f, 0.0f, 0.0f);
 
-                // Llamar a DrawNormals del mesh
-                mesh->DrawNormals(modelMatrix, 0.05f);
+                // Llamar a DrawNormals del mesh (si tienes esta función)
+                // mesh->DrawNormals(modelMatrix, 0.05f);
             }
         }
     }
@@ -327,6 +326,27 @@ bool OpenGL::Start()
     )";
     debugShader = new Shader(debugVert, debugFrag);
 
+    // Grid shader (sin texturas, solo color sólido)
+    const char* gridVert = R"(
+        #version 330 core
+        layout(location = 0) in vec3 aPos;
+        uniform mat4 model;
+        uniform mat4 view;
+        uniform mat4 projection;
+        void main() {
+            gl_Position = projection * view * model * vec4(aPos, 1.0);
+        }
+    )";
+    const char* gridFrag = R"(
+        #version 330 core
+        out vec4 FragColor;
+        uniform vec3 gridColor;
+        void main() {
+            FragColor = vec4(gridColor, 1.0);
+        }
+    )";
+    gridShader = new Shader(gridVert, gridFrag);
+
     // Load default texture
     texture = Texture::LoadTexture("../Assets/Textures/wall.jpg");
     if (texture == 0)
@@ -338,7 +358,7 @@ bool OpenGL::Start()
     // Crear el grid PRIMERO
     CreateGrid(20);
 
-    // ? Load default model usando ModuleScene y escalarlo
+    // Load default model usando ModuleScene y escalarlo
     try
     {
         std::cout << "Loading BakerHouse.fbx..." << std::endl;
@@ -355,33 +375,15 @@ bool OpenGL::Start()
             ComponentTransform* transform = bakerHouse->GetComponent<ComponentTransform>();
             if (transform)
             {
-                // Escala más pequeña
-                transform->SetScale(glm::vec3(0.01f)); // Ajusta según necesites
-
-                // Rotar 90 grados en el eje X para ponerlo de pie
-                // Usando glm::angleAxis que está en glm/gtc/quaternion.hpp
+                transform->SetScale(glm::vec3(0.01f));
                 glm::quat rotation = glm::angleAxis(glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
                 transform->SetRotation(rotation);
-            }
-            else
-            {
-                std::cout << "BakerHouse has no transform component!" << std::endl;
+                std::cout << "BakerHouse scaled and rotated" << std::endl;
             }
 
-            // Verificar que tenga mesh
-            ComponentMesh* mesh = bakerHouse->GetComponent<ComponentMesh>();
-            if (mesh)
-            {
-                std::cout << "BakerHouse has mesh component" << std::endl;
-            }
-            else
-            {
-                std::cout << "BakerHouse has NO mesh component!" << std::endl;
-            }
-        }
-        else
-        {
-            std::cout << "ERROR: Root has no children after loading model!" << std::endl;
+            // Seleccionar automáticamente el modelo inicial
+            Application::GetInstance().moduleScene->SetSelectedGameObject(bakerHouse);
+            std::cout << "BakerHouse auto-selected" << std::endl;
         }
 
         std::cout << "Successfully loaded FBX model via ModuleScene" << std::endl;
@@ -446,13 +448,14 @@ bool OpenGL::Update()
 
                     if (transform)
                     {
-                        // Misma escala y rotación que al inicio
-                        transform->SetScale(glm::vec3(0.01f)); // Ajusta según necesites
-
-                        // Rotar para que esté de pie
+                        transform->SetScale(glm::vec3(0.01f));
                         glm::quat rotation = glm::angleAxis(glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
                         transform->SetRotation(rotation);
                     }
+
+                    // Seleccionar automáticamente el modelo dropeado
+                    app.moduleScene->SetSelectedGameObject(droppedModel);
+                    std::cout << "Auto-selected dropped model: " << droppedModel->GetName() << std::endl;
                 }
 
                 std::cout << "Loaded 3D model via ModuleScene: " << filePath << std::endl;
@@ -465,17 +468,28 @@ bool OpenGL::Update()
 
                 if (newTex)
                 {
-                    // Solo actualizar la referencia, no eliminar (los componentes manejan sus texturas)
+                    // Solo actualizar la referencia
                     texture = newTex;
 
-                    // Aplicar textura a todos los GameObjects de la escena
-                    GameObject* root = app.moduleScene->GetRoot();
-                    if (root)
-                    {
-                        ApplyTextureToGameObjects(root, newTex, filePath.c_str());
-                    }
+                    // Aplicar textura solo al objeto seleccionado
+                    GameObject* selected = app.moduleScene->GetSelectedGameObject();
 
-                    std::cout << "Applied new texture to scene: " << filePath << std::endl;
+                    if (selected)
+                    {
+                        // Aplicar textura solo al objeto seleccionado y sus hijos
+                        ApplyTextureToGameObjects(selected, newTex, filePath.c_str());
+                        std::cout << "Applied texture to selected object: " << selected->GetName() << std::endl;
+                    }
+                    else
+                    {
+                        // Si no hay selección, aplicar a toda la escena (comportamiento anterior)
+                        GameObject* root = app.moduleScene->GetRoot();
+                        if (root)
+                        {
+                            ApplyTextureToGameObjects(root, newTex, filePath.c_str());
+                        }
+                        std::cout << "No object selected, applied texture to entire scene: " << filePath << std::endl;
+                    }
                 }
             }
             else
@@ -593,6 +607,12 @@ bool OpenGL::CleanUp()
     {
         delete debugShader;
         debugShader = nullptr;
+    }
+
+    if (gridShader)
+    {
+        delete gridShader;
+        gridShader = nullptr;
     }
 
     if (glContext)
