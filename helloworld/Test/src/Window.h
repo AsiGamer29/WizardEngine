@@ -21,6 +21,9 @@ public:
     SDL_GLContext GetContext() const { return context; }
     int GetWidth() const { return width; }
     int GetHeight() const { return height; }
+
+
+    // New: allow runtime changes from editor
     void SetWindowSize(int w, int h);
     void SetVSync(bool enabled);
 private:
@@ -29,5 +32,6 @@ private:
     int width;
     int height;
     int scale;
-   
+    bool vsync = true; // track current vsync state
+
 };

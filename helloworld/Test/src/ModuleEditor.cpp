@@ -6,26 +6,51 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <sstream>
+#include <cstdarg>
 
-// Includes para crear GameObjects con geometrÌa
+// Includes para crear GameObjects con geometr√≠a
 #include "GeometryGenerator.h"
 #include "GameObject.h"
 #include "ComponentTransform.h"
 #include "ComponentMesh.h"
 #include "ComponentMaterial.h"
 
+// Engine console storage definitions
+std::vector<std::string> ModuleEditor::engine_log;
+std::mutex ModuleEditor::engine_log_mutex;
+size_t ModuleEditor::engine_log_max_messages = 8192;
+bool ModuleEditor::engine_log_auto_scroll = true;
+
+void ModuleEditor::PushEngineLog(const std::string& msg)
+{
+    std::lock_guard<std::mutex> lock(engine_log_mutex);
+    engine_log.push_back(msg);
+    if (engine_log.size() > engine_log_max_messages)
+        engine_log.erase(engine_log.begin(), engine_log.begin() + (engine_log.size() - engine_log_max_messages));
+}
+
+void ModuleEditor::PushEnginePrintf(const char* fmt, ...)
+{
+    char buffer[4096];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+    PushEngineLog(std::string(buffer));
+}
+
 // ============================================
-// FUNCI”N HELPER PARA CREAR GAMEOBJECTS CON GEOMETRÕA
+// FUNCI√ìN HELPER PARA CREAR GAMEOBJECTS CON GEOMETR√çA
 // ============================================
 static void CreateGeometryGameObject(const std::string& geometryType) {
     auto& app = Application::GetInstance();
 
     if (!app.moduleScene) {
-        std::cerr << "ModuleScene no est· inicializado" << std::endl;
+        std::cerr << "ModuleScene no est√° inicializado" << std::endl;
         return;
     }
 
-    // Crear un nombre ˙nico para el GameObject
+    // Crear un nombre √∫nico para el GameObject
     static int geometryCounter = 0;
     std::string objectName = geometryType + "_" + std::to_string(++geometryCounter);
 
@@ -60,7 +85,7 @@ static void CreateGeometryGameObject(const std::string& geometryType) {
         );
 
     if (meshComp) {
-        // Crear la geometrÌa seg˙n el tipo
+        // Crear la geometr√≠a seg√∫n el tipo
         MeshGeometry geom;
 
         if (geometryType == "Cube") {
@@ -79,7 +104,7 @@ static void CreateGeometryGameObject(const std::string& geometryType) {
             geom = GeometryGenerator::CreatePlane(5.0f, 5.0f);
         }
 
-        // Cargar la geometrÌa en el componente mesh
+        // Cargar la geometr√≠a en el componente mesh
         meshComp->LoadFromGeometry(&geom);
     }
 
@@ -91,10 +116,11 @@ static void CreateGeometryGameObject(const std::string& geometryType) {
     }
 
     std::cout << "GameObject creado: " << objectName << std::endl;
+    ModuleEditor::PushEnginePrintf("GameObject created: %s", objectName.c_str());
 }
 
 // ============================================
-// IMPLEMENTACI”N DE LA CLASE ModuleEditor
+// IMPLEMENTACI√ìN DE LA CLASE ModuleEditor
 // ============================================
 
 ModuleEditor::ModuleEditor()
@@ -133,16 +159,33 @@ bool ModuleEditor::Start()
     }
     if (app.opengl)
     {
-        settings.wireframe = false; // No wireframe state exposed yet
+        settings.wireframe = false;
     }
     if (app.camera)
     {
-        settings.mouse_sensitivity = 1.0f; // camera has its own sensitivity internally; expose link later
+        settings.mouse_sensitivity = 1.0f;
     }
 
     // Setup Platform/Renderer backends
     ImGui_ImplSDL3_InitForOpenGL(app.window->GetWindow(), app.window->GetContext());
     ImGui_ImplOpenGL3_Init("#version 330 core");
+
+    // Log initial status
+    PushEngineLog("Starting Engine...");
+    PushEnginePrintf("IMGUI: Initialized (version: %s)", ImGui::GetVersion());
+
+    if (app.window)
+    {
+        PushEnginePrintf("Window: %dx%d", settings.window_width, settings.window_height);
+        PushEnginePrintf("VSync: %s", settings.vsync ? "On" : "Off");
+    }
+
+    const char* glver = (const char*)glGetString(GL_VERSION);
+    PushEnginePrintf("OpenGL Version: %s", glver ? glver : "Unknown");
+
+    PushEnginePrintf("SDL Platform: %s", SDL_GetPlatform());
+
+    PushEngineLog("Engine started.");
 
     return true;
 }
@@ -172,20 +215,35 @@ bool ModuleEditor::Update()
         {
             if (ImGui::MenuItem("Exit"))
             {
-                // Signal application to quit via SDL event
                 SDL_Event evt;
                 SDL_zero(evt);
                 evt.type = SDL_EVENT_QUIT;
                 SDL_PushEvent(&evt);
+                PushEngineLog("User requested Exit.");
             }
             ImGui::EndMenu();
         }
 
         if (ImGui::BeginMenu("View"))
         {
+            bool prev_demo = show_demo_window;
+            bool prev_test = show_test_window;
+            bool prev_about = show_about_window;
+            bool prev_console = show_console_window;
+
             ImGui::MenuItem("Demo Window", NULL, &show_demo_window);
             ImGui::MenuItem("Test Window", NULL, &show_test_window);
             ImGui::MenuItem("About", NULL, &show_about_window);
+            ImGui::MenuItem("Console", NULL, &show_console_window);
+
+            if (prev_demo != show_demo_window)
+                PushEnginePrintf("Demo Window %s", show_demo_window ? "opened" : "closed");
+            if (prev_test != show_test_window)
+                PushEnginePrintf("Test Window %s", show_test_window ? "opened" : "closed");
+            if (prev_about != show_about_window)
+                PushEnginePrintf("About Window %s", show_about_window ? "opened" : "closed");
+            if (prev_console != show_console_window)
+                PushEnginePrintf("Console Window %s", show_console_window ? "opened" : "closed");
 
             // Configuration submenu inside View
             if (ImGui::BeginMenu("Configuration"))
@@ -199,35 +257,38 @@ bool ModuleEditor::Update()
             ImGui::EndMenu();
         }
 
-        // ============================================
-        // MEN⁄ GEOMETRY - MODIFICADO PARA CREAR GAMEOBJECTS
-        // ============================================
+        // MEN√ö GEOMETRY - CREA GAMEOBJECTS
         if (ImGui::BeginMenu("Geometry"))
         {
             if (ImGui::MenuItem("Cube"))
             {
                 requested_geometry = "Cube";
                 CreateGeometryGameObject("Cube");
+                PushEnginePrintf("Created geometry: %s", "Cube");
             }
             if (ImGui::MenuItem("Sphere"))
             {
                 requested_geometry = "Sphere";
                 CreateGeometryGameObject("Sphere");
+                PushEnginePrintf("Created geometry: %s", "Sphere");
             }
             if (ImGui::MenuItem("Cylinder"))
             {
                 requested_geometry = "Cylinder";
                 CreateGeometryGameObject("Cylinder");
+                PushEnginePrintf("Created geometry: %s", "Cylinder");
             }
             if (ImGui::MenuItem("Pyramid"))
             {
                 requested_geometry = "Pyramid";
                 CreateGeometryGameObject("Pyramid");
+                PushEnginePrintf("Created geometry: %s", "Pyramid");
             }
             if (ImGui::MenuItem("Plane"))
             {
                 requested_geometry = "Plane";
                 CreateGeometryGameObject("Plane");
+                PushEnginePrintf("Created geometry: %s", "Plane");
             }
             ImGui::EndMenu();
         }
@@ -237,18 +298,22 @@ bool ModuleEditor::Update()
             if (ImGui::MenuItem("Documentation on GitHub"))
             {
                 SDL_OpenURL("https://github.com/AsiGamer29/WizardEngine/blob/main/helloworld/docs/Documentation.md");
+                PushEngineLog("Opened Documentation URL.");
             }
             if (ImGui::MenuItem("Report a bug"))
             {
                 SDL_OpenURL("https://github.com/AsiGamer29/WizardEngine/issues");
+                PushEngineLog("Opened Issue Tracker URL.");
             }
             if (ImGui::MenuItem("Download latest"))
             {
                 SDL_OpenURL("https://github.com/AsiGamer29/WizardEngine/releases");
+                PushEngineLog("Opened Releases URL.");
             }
             if (ImGui::MenuItem("About"))
             {
                 show_about_window = !show_about_window;
+                PushEnginePrintf("Toggled About: %s", show_about_window ? "open" : "closed");
             }
             ImGui::EndMenu();
         }
@@ -284,11 +349,11 @@ bool ModuleEditor::Update()
         if (ImGui::Button("Toggle Demo Window"))
         {
             show_demo_window = !show_demo_window;
+            PushEnginePrintf("Demo Window %s", show_demo_window ? "opened" : "closed");
         }
 
         ImGui::Checkbox("Show Demo Window", &show_demo_window);
 
-        // Show last requested geometry (for debugging / future connection)
         if (!requested_geometry.empty())
         {
             ImGui::Separator();
@@ -298,21 +363,43 @@ bool ModuleEditor::Update()
         ImGui::End();
     }
 
+    // Console window
+    if (show_console_window)
+    {
+        ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Console", &show_console_window);
+
+        ImGui::Checkbox("Auto-scroll", &engine_log_auto_scroll);
+
+        ImGui::Separator();
+
+        ImGui::BeginChild("ConsoleRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+        {
+            std::lock_guard<std::mutex> lock(engine_log_mutex);
+            for (const auto& line : engine_log)
+            {
+                ImGui::TextUnformatted(line.c_str());
+            }
+            if (engine_log_auto_scroll)
+                ImGui::SetScrollHereY(1.0f);
+        }
+        ImGui::EndChild();
+
+        ImGui::End();
+    }
+
     // Config: Performance (FPS graph)
     if (show_config_performance)
     {
         ImGui::Begin("Performance", &show_config_performance);
-        // prepare data order for plot (ImGui expects 0..count-1)
         int count = fps_count;
         int offset = (fps_pos >= count) ? fps_pos - count : (fps_pos + FPS_HISTORY_SIZE - count);
-        // If buffer wrapped, present contiguous data by constructing a temporary array
         if (offset + count <= FPS_HISTORY_SIZE)
         {
             ImGui::PlotLines("FPS", fps_history + offset, count, 0, NULL, 0.0f, 240.0f, ImVec2(0, 80));
         }
         else
         {
-            // create temporary array
             static float temp[FPS_HISTORY_SIZE];
             for (int i = 0; i < count; ++i)
                 temp[i] = fps_history[(offset + i) % FPS_HISTORY_SIZE];
@@ -333,9 +420,9 @@ bool ModuleEditor::Update()
         ImGui::SliderInt("Height", &settings.window_height, 480, 2160);
         if (oldW != settings.window_width || oldH != settings.window_height)
         {
-            // apply to real window
             auto& app = Application::GetInstance();
             if (app.window) app.window->SetWindowSize(settings.window_width, settings.window_height);
+            PushEnginePrintf("Window resized to %dx%d", settings.window_width, settings.window_height);
         }
 
         bool oldVsync = settings.vsync;
@@ -344,6 +431,7 @@ bool ModuleEditor::Update()
         {
             auto& app = Application::GetInstance();
             if (app.window) app.window->SetVSync(settings.vsync);
+            PushEnginePrintf("VSync %s", settings.vsync ? "enabled" : "disabled");
         }
 
         ImGui::Separator();
@@ -358,9 +446,9 @@ bool ModuleEditor::Update()
                 if (settings.wireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
                 else glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             }
+            PushEnginePrintf("Wireframe %s", settings.wireframe ? "enabled" : "disabled");
         }
         ImGui::ColorEdit3("Clear Color", settings.clear_color);
-        // Note: apply clear color could be used by OpenGL module; here just store
 
         ImGui::Separator();
         ImGui::Text("Input");
@@ -368,16 +456,17 @@ bool ModuleEditor::Update()
         ImGui::SliderFloat("Mouse Sensitivity", &settings.mouse_sensitivity, 0.1f, 5.0f);
         if (oldSens != settings.mouse_sensitivity)
         {
-            auto& app = Application::GetInstance();
-            if (app.camera)
-            {
-                // Camera currently stores sensitivity privately; for now we can hack by updating camera's private field if it were public.
-                // As a safe approach, we can expose camera sensitivity setter later. For now store value for eventual use.
-            }
+            PushEnginePrintf("Mouse sensitivity changed to %.2f", settings.mouse_sensitivity);
         }
+        
         ImGui::Separator();
         ImGui::Text("Textures");
+        int oldFilter = settings.texture_filter;
         ImGui::Combo("Filter", &settings.texture_filter, "Nearest\0Linear\0");
+        if (oldFilter != settings.texture_filter)
+        {
+            PushEnginePrintf("Texture filter set to %s", settings.texture_filter == 0 ? "Nearest" : "Linear");
+        }
         ImGui::End();
     }
 
@@ -463,5 +552,44 @@ bool ModuleEditor::CleanUp()
 
 void ModuleEditor::ProcessEvent(const SDL_Event& event)
 {
+    // Detect file drop events and log filename only
+    if (event.type == SDL_EVENT_DROP_FILE)
+    {
+        const char* data = event.drop.data;
+        if (data)
+        {
+            std::string path(data);
+            std::string name;
+            size_t pos = path.find_last_of("/\\");
+            if (pos != std::string::npos && pos + 1 < path.size())
+                name = path.substr(pos + 1);
+            else
+                name = path;
+
+            std::string ext;
+            size_t dot = name.find_last_of('.');
+            if (dot != std::string::npos && dot + 1 < name.size())
+                ext = name.substr(dot + 1);
+            std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c){ return std::tolower(c); });
+
+            const std::vector<std::string> tex_ext = {"png","jpg","jpeg","bmp","tga","dds","tif","tiff","psd"};
+            const std::vector<std::string> model_ext = {"fbx","obj","gltf","glb","dae","3ds"};
+
+            if (std::find(tex_ext.begin(), tex_ext.end(), ext) != tex_ext.end())
+            {
+                PushEnginePrintf("Texture dropped: %s", name.c_str());
+            }
+            else if (std::find(model_ext.begin(), model_ext.end(), ext) != model_ext.end())
+            {
+                PushEnginePrintf("Model dropped: %s", name.c_str());
+            }
+            else
+            {
+                PushEnginePrintf("File dropped: %s", name.c_str());
+            }
+        }
+    }
+
+    // Forward event to ImGui backend
     ImGui_ImplSDL3_ProcessEvent(&event);
 }
