@@ -121,11 +121,6 @@ static void CreateGeometryGameObject(const std::string& geometryType) {
     // COMPONENTE MATERIAL
     ComponentMaterial* materialComp = (ComponentMaterial*)gameObject->CreateComponent(ComponentType::MATERIAL);
 
-    if (materialComp) {
-        // Ya tiene textura checkerboard por defecto
-    }
-
-    std::cout << "GameObject creado: " << objectName << std::endl;
     ModuleEditor::PushEnginePrintf("GameObject created: %s", objectName.c_str());
 }
 

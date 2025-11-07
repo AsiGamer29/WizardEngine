@@ -324,7 +324,7 @@ bool OpenGL::Start()
     try
     {
         auto& app = Application::GetInstance();
-        app.moduleScene->LoadModel("Assets/Models/BakerHouse.fbx");
+        app.moduleScene->LoadModel("../Assets/Models/BakerHouse.fbx");
 
         GameObject* root = app.moduleScene->GetRoot();
         if (!root)
@@ -345,33 +345,32 @@ bool OpenGL::Start()
                 glm::quat correction = glm::angleAxis(glm::radians(90.0f), glm::vec3(1, 0, 0));
                 transform->SetRotation(correction);
 
-                std::cout << "BakerHouse scaled and rotated to correct orientation" << std::endl;
             }
             // Cargar textura y aplicarla
-            GLuint bakerTexture = Texture::LoadTexture("Assets/Textures/Baker_house.png");
+            GLuint bakerTexture = Texture::LoadTexture("../Assets/Textures/Baker_house.png");
             if (!bakerTexture)
                 bakerTexture = Texture::CreateCheckerboardTexture(512, 512, 32);
 
-            ApplyTextureToGameObjects(bakerHouse, bakerTexture, "Assets/Textures/Baker_house.png");
+            ApplyTextureToGameObjects(bakerHouse, bakerTexture, "../Assets/Textures/Baker_house.png");
 
             // Seleccionar el GameObject
             app.moduleScene->SetSelectedGameObject(bakerHouse);
 
-            std::cout << "BakerHouse loaded, scaled, textured, and selected." << std::endl;
+            ModuleEditor::PushEnginePrintf("Initial model loaded, scaled, textured, and selected.");
         }
     }
     catch (const std::exception& e)
     {
-        std::cerr << "ERROR: Could not load BakerHouse - " << e.what() << std::endl;
+        ModuleEditor::PushEnginePrintf("ERROR: Could not load initial model");
     }
     catch (...)
     {
-        std::cerr << "UNKNOWN ERROR: Could not load BakerHouse" << std::endl;
+        ModuleEditor::PushEnginePrintf("UNKNOWN ERROR: Could not load initial model");
     }
 
     isGeometryActive = false;
 
-    std::cout << "OpenGL initialization complete" << std::endl;
+    ModuleEditor::PushEnginePrintf("OpenGL initialization complete");
     return true;
 }
 
@@ -419,7 +418,8 @@ bool OpenGL::Update()
             {
                 try
                 {
-                    std::cout << "=== LOADING MODEL: " << filePath << " ===" << std::endl;
+                    ModuleEditor::PushEnginePrintf("=== LOADING MODEL: ");
+                    ModuleEditor::PushEnginePrintf(filePath);
 
                     // No limpiar la escena ni otros GameObjects
                     if (!app.moduleScene)
