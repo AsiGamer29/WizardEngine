@@ -1,5 +1,6 @@
 #pragma once
 #include "Module.h"
+#include "imgui.h"
 #include <string>
 #include <vector>
 #include <mutex>
@@ -20,26 +21,36 @@ public:
     bool CleanUp() override;
 
     void ProcessEvent(const SDL_Event& event);
+    void HandleMousePicking();
+    void HandleGizmo();  // <--- NUEVO: Manejo de gizmos
 
     // API for engine modules to report messages to the editor console
     static void PushEngineLog(const std::string& msg);
     static void PushEnginePrintf(const char* fmt, ...);
 
+    // Framebuffer OpenGL para el viewport
+    GLuint sceneFramebuffer = 0;
+    GLuint sceneTexture = 0;
+    GLuint sceneRBO = 0;
+
+    int sceneFBWidth = 1280;
+    int sceneFBHeight = 720;
+
 private:
     bool show_demo_window = false;
-    bool show_test_window = false; 
-    bool show_about_window = false; // About window toggle
-    bool show_console_window = true; // Console window toggle
-    bool show_hierarchy_window = true; // Jerarquía window toggle
-    bool show_inspector_window = true; // Inspector window toggle
+    bool show_test_window = false;
+    bool show_about_window = false;
+    bool show_console_window = true;
+    bool show_hierarchy_window = true;
+    bool show_inspector_window = true;
 
     // Inspector checkerboard override state
-    bool inspector_show_checkerboard = false; // when true, apply override to selected GO
-    unsigned int inspectorCheckerTex = 0;    // cached checkerboard texture used for override/preview
-    void* inspectorOverrideTarget = nullptr; // GameObject* stored as void* to avoid header include cycles
+    bool inspector_show_checkerboard = false;
+    unsigned int inspectorCheckerTex = 0;
+    void* inspectorOverrideTarget = nullptr;
 
     // Geometry loading menu helper
-    std::string requested_geometry; // name of the geometry requested to load
+    std::string requested_geometry;
 
     // Configuration windows
     bool show_config_performance = false;
@@ -52,6 +63,30 @@ private:
     int fps_pos = 0;
     int fps_count = 0;
 
+    // Mouse picking viewport tracking
+    bool isMouseOverViewport;
+    ImVec2 viewportPos;
+    ImVec2 viewportSize;
+
+    // ===== NUEVO: Estado de Gizmos =====
+    enum class GizmoOperation
+    {
+        TRANSLATE,
+        ROTATE,
+        SCALE
+    };
+
+    enum class GizmoMode
+    {
+        LOCAL,
+        WORLD
+    };
+
+    GizmoOperation currentGizmoOperation = GizmoOperation::TRANSLATE;
+    GizmoMode currentGizmoMode = GizmoMode::WORLD;
+    bool useSnap = false;
+    float snapValues[3] = { 1.0f, 15.0f, 0.1f }; // Translate, Rotate, Scale
+
     // Module settings placeholders
     struct ModuleSettings
     {
@@ -61,7 +96,7 @@ private:
         bool vsync = true;
         // Renderer
         bool wireframe = false;
-        float clear_color[3] = {0.1f, 0.1f, 0.1f};
+        float clear_color[3] = { 0.1f, 0.1f, 0.1f };
         // Input
         float mouse_sensitivity = 1.0f;
         // Textures
@@ -73,5 +108,6 @@ private:
     static std::mutex engine_log_mutex;
     static size_t engine_log_max_messages;
     static bool engine_log_auto_scroll;
+    
 
 };

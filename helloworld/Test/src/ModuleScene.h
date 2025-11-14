@@ -1,5 +1,6 @@
 #pragma once
 #include "Module.h"
+#include "Ray.h"
 #include <vector>
 #include <string>
 
@@ -25,6 +26,7 @@ public:
     bool PreUpdate() override;
     bool Update() override;
     bool PostUpdate() override;
+    void RenderScene();
     bool CleanUp() override;
 
     // Gestión de GameObjects
@@ -47,7 +49,11 @@ public:
     void SetDebugShowNormals(bool v) { debugShowNormals = v; }
     bool GetDebugShowNormals() const { return debugShowNormals; }
 
+    GameObject* PerformRaycast(const Ray& ray);
+    void UpdateAllAABBs();
+
 private:
     void LoadFromAssimp(const aiScene* scene, const aiNode* node, GameObject* parent, const std::string& basePath);
     void RecursiveDelete(GameObject* go);
+    void CollectRaycastCandidates(GameObject* go, const Ray& ray, std::vector<RayHit>& candidates);
 };

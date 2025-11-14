@@ -2,6 +2,8 @@
 #include "Input.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include "Ray.h"
+
 
 class Camera
 {
@@ -15,6 +17,8 @@ public:
     glm::vec3 getPosition() const { return position; }
 
     void setProjection(float fov, float aspect, float nearP, float farP);
+    Ray ScreenPointToRay(float mouseX, float mouseY, int screenWidth, int screenHeight);
+
 
 private:
     void updateCameraVectors();

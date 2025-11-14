@@ -2,6 +2,17 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include "BaseComponent.h"
+#include "ComponentMesh.h"
+#include "Ray.h"
+#include "AABB.h"
+
+class Component;
+struct Ray;
+struct RayHit;
+class AABB;
+
+
 
 class Component;
 enum class ComponentType;
@@ -15,6 +26,12 @@ private:
     GameObject* parent;
     std::vector<GameObject*> children;
     std::vector<Component*> components;
+
+    AABB globalAABB;  // AABB en espacio global (world space)
+
+    // Helper para intersección con triángulos
+    bool IntersectRayTriangles(const Ray& rayLocal, ComponentMesh* mesh,
+        float& closestDist, glm::vec3& hitPoint);
 
 public:
     GameObject(const char* name);
@@ -38,6 +55,12 @@ public:
         return nullptr;
     }
     
+    // Sistema de AABB
+    void UpdateAABB();
+    const AABB& GetAABB() const { return globalAABB; }
+
+    // Sistema de picking
+    bool IntersectRay(const Ray& ray, RayHit& hit);
 
     // Gestión de jerarquía
     void AddChild(GameObject* child);

@@ -1,6 +1,7 @@
 #pragma once
 #include "BaseComponent.h"
 #include "GeometryGenerator.h"
+#include "AABB.h"
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <vector>
@@ -20,8 +21,9 @@ class ComponentMesh : public Component
 private:
     std::vector<MeshVertex> vertices;
     std::vector<unsigned int> indices;
-
-    GLuint VAO, VBO, EBO,numIndices,numVertices;
+    GLuint VAO, VBO, EBO, numIndices, numVertices;
+    AABB localAABB;
+    bool aabbDirty = true;
 
     void SetupMesh();
     void CleanupBuffers();
@@ -37,7 +39,7 @@ public:
     // Cargar mesh desde Assimp (para modelos FBX/OBJ)
     void LoadMesh(const aiMesh* mesh);
 
-    // NUEVO: Cargar desde geometría procedural
+    // Cargar desde geometría procedural
     void LoadFromGeometry(MeshGeometry* geom);
 
     // Renderizar
@@ -49,4 +51,12 @@ public:
     // Getters
     size_t GetVertexCount() const { return vertices.size(); }
     size_t GetIndexCount() const { return indices.size(); }
+
+    // CORREGIDO: Devolver referencias a vectores correctos
+    const std::vector<MeshVertex>& GetVertices() const { return vertices; }
+    const std::vector<unsigned int>& GetIndices() const { return indices; }
+
+    // Sistema de AABB
+    AABB CalculateLocalAABB() const;
+    AABB GetLocalAABB();
 };

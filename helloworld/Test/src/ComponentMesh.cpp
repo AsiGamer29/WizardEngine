@@ -244,4 +244,33 @@ void ComponentMesh::LoadFromGeometry(MeshGeometry* geom)
     std::cout << "[ComponentMesh] Loaded procedural geometry: "
         << numVertices << " vertices, "
         << numIndices << " indices" << std::endl;
+
+    aabbDirty = true;
+
+}
+
+AABB ComponentMesh::CalculateLocalAABB() const
+{
+    AABB aabb;
+
+    if (vertices.empty())
+        return aabb;
+
+    // Iterar sobre todos los vértices usando la estructura MeshVertex
+    for (const MeshVertex& vertex : vertices)
+    {
+        aabb.Encapsulate(vertex.Position);
+    }
+
+    return aabb;
+}
+
+AABB ComponentMesh::GetLocalAABB()
+{
+    if (aabbDirty)
+    {
+        localAABB = CalculateLocalAABB();
+        aabbDirty = false;
+    }
+    return localAABB;
 }

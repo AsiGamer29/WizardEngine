@@ -228,6 +228,25 @@ bool OpenGL::Start()
     ilInit();
     iluInit();
 
+    glGenFramebuffers(1, &sceneFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO);
+
+    glGenTextures(1, &sceneTexture);
+    glBindTexture(GL_TEXTURE_2D, sceneTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, sceneWidth, sceneHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneTexture, 0);
+
+    glGenRenderbuffers(1, &sceneRBO);
+    glBindRenderbuffer(GL_RENDERBUFFER, sceneRBO);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, sceneWidth, sceneHeight);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, sceneRBO);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+
     const char* vertexShaderSource = R"(
         #version 330 core
         layout (location = 0) in vec3 aPos;
@@ -419,7 +438,6 @@ bool OpenGL::Update()
                 try
                 {
                     ModuleEditor::PushEnginePrintf("=== LOADING MODEL: ");
-                    ModuleEditor::PushEnginePrintf(filePath);
 
                     // No limpiar la escena ni otros GameObjects
                     if (!app.moduleScene)
@@ -536,6 +554,23 @@ bool OpenGL::Update()
         app.input->droppedFiles.clear();
     }
 
+    glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO);
+    glViewport(0, 0, sceneWidth, sceneHeight);
+
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    DrawGrid();
+
+    GameObject* root = nullptr;
+    if (app.moduleScene)
+        root = app.moduleScene->GetRoot();
+
+    if (root)
+        DrawGameObjectsWithAABB(root);
+
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
     // Draw Grid
     DrawGrid();
 
@@ -571,7 +606,7 @@ bool OpenGL::Update()
     {
         GameObject* root = app.moduleScene->GetRoot();
         if (root)
-            DrawGameObjects(root);
+            DrawGameObjectsWithAABB(root);
     }
 
     return true;
@@ -680,6 +715,144 @@ bool OpenGL::CleanUp()
         glContext = nullptr;
     }
 
+    if (aabbVBO) {
+        glDeleteBuffers(1, &aabbVBO);
+        aabbVBO = 0;
+    }
+    if (aabbVAO) {
+        glDeleteVertexArrays(1, &aabbVAO);
+        aabbVAO = 0;
+    }
+
     std::cout << "OpenGL cleanup complete" << std::endl;
     return true;
+}
+
+void OpenGL::CreateAABBBuffers()
+{
+    // Crear líneas para un cubo unitario (wireframe)
+    float vertices[] = {
+        // Cara frontal
+        -0.5f, -0.5f,  0.5f,  0.5f, -0.5f,  0.5f,
+         0.5f, -0.5f,  0.5f,  0.5f,  0.5f,  0.5f,
+         0.5f,  0.5f,  0.5f, -0.5f,  0.5f,  0.5f,
+        -0.5f,  0.5f,  0.5f, -0.5f, -0.5f,  0.5f,
+
+        // Cara trasera
+        -0.5f, -0.5f, -0.5f,  0.5f, -0.5f, -0.5f,
+         0.5f, -0.5f, -0.5f,  0.5f,  0.5f, -0.5f,
+         0.5f,  0.5f, -0.5f, -0.5f,  0.5f, -0.5f,
+        -0.5f,  0.5f, -0.5f, -0.5f, -0.5f, -0.5f,
+
+        // Conectores
+        -0.5f, -0.5f, -0.5f, -0.5f, -0.5f,  0.5f,
+         0.5f, -0.5f, -0.5f,  0.5f, -0.5f,  0.5f,
+         0.5f,  0.5f, -0.5f,  0.5f,  0.5f,  0.5f,
+        -0.5f,  0.5f, -0.5f, -0.5f,  0.5f,  0.5f
+    };
+
+    glGenVertexArrays(1, &aabbVAO);
+    glGenBuffers(1, &aabbVBO);
+
+    glBindVertexArray(aabbVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, aabbVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glBindVertexArray(0);
+}
+
+void OpenGL::DrawAABB(const AABB& aabb, const glm::vec3& color)
+{
+    if (aabbVAO == 0)
+        CreateAABBBuffers();
+
+    if (!debugShader)
+        return;
+
+    debugShader->use();
+
+    Application& app = Application::GetInstance();
+
+    // Calcular matriz de transformación para el AABB
+    glm::vec3 center = aabb.GetCenter();
+    glm::vec3 size = aabb.GetSize();
+
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, center);
+    model = glm::scale(model, size);
+
+    glm::mat4 view = app.camera->getViewMatrix();
+    glm::mat4 projection = app.camera->getProjectionMatrix();
+
+    glUniformMatrix4fv(glGetUniformLocation(debugShader->ID, "model"), 1, GL_FALSE, glm::value_ptr(model));
+    glUniformMatrix4fv(glGetUniformLocation(debugShader->ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(glGetUniformLocation(debugShader->ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+    glUniform3fv(glGetUniformLocation(debugShader->ID, "color"), 1, glm::value_ptr(color));
+
+    glBindVertexArray(aabbVAO);
+    glDrawArrays(GL_LINES, 0, 24);
+    glBindVertexArray(0);
+}
+
+void OpenGL::DrawGameObjectsWithAABB(GameObject* go)
+{
+    if (!go || !go->IsActive())
+        return;
+
+    // Dibujar mesh normal
+    ComponentTransform* transform = go->GetComponent<ComponentTransform>();
+    ComponentMesh* mesh = go->GetComponent<ComponentMesh>();
+    ComponentMaterial* material = go->GetComponent<ComponentMaterial>();
+
+    if (mesh && transform)
+    {
+        shader->use();
+
+        Application& app = Application::GetInstance();
+
+        glm::mat4 modelMatrix = transform->GetGlobalMatrix();
+        glm::mat4 view = app.camera->getViewMatrix();
+        glm::mat4 projection = app.camera->getProjectionMatrix();
+
+        glUniformMatrix4fv(glGetUniformLocation(shader->ID, "model"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+        glUniformMatrix4fv(glGetUniformLocation(shader->ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(glGetUniformLocation(shader->ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+
+        glm::vec3 lightPos(2.0f, 2.0f, 2.0f);
+        glm::vec3 viewPos = app.camera->getPosition();
+        glm::vec3 lightColor(1.0f);
+
+        glUniform3fv(glGetUniformLocation(shader->ID, "lightPos"), 1, glm::value_ptr(lightPos));
+        glUniform3fv(glGetUniformLocation(shader->ID, "viewPos"), 1, glm::value_ptr(viewPos));
+        glUniform3fv(glGetUniformLocation(shader->ID, "lightColor"), 1, glm::value_ptr(lightColor));
+
+        if (material)
+            material->Bind();
+        else
+        {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, texture);
+        }
+
+        mesh->Draw();
+
+        // Dibujar AABB si está habilitado
+        if (showAABBs)
+        {
+            glm::vec3 aabbColor = (go == Application::GetInstance().moduleScene->GetSelectedGameObject())
+                ? glm::vec3(1.0f, 1.0f, 0.0f)  // Amarillo para seleccionado
+                : glm::vec3(0.0f, 1.0f, 0.0f);  // Verde para el resto
+
+            DrawAABB(go->GetAABB(), aabbColor);
+        }
+    }
+
+    // Recursión en hijos
+    for (GameObject* child : go->GetChildren())
+    {
+        DrawGameObjectsWithAABB(child);
+    }
 }

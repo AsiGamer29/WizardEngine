@@ -7,6 +7,9 @@
 #include <algorithm>
 #include <sstream>
 #include <cstdarg>
+#include "ImGuizmo.h"
+#include "ComponentTransform.h"
+#include <glm/gtc/type_ptr.hpp>
 
 // Includes para crear GameObjects con geometría
 #include "GeometryGenerator.h"
@@ -18,10 +21,11 @@
 #include "Texture.h"
 
 // Enable experimental GLM extensions used (quaternion utilities)
-#ifndef GLM_ENABLE_EXPERIMENTAL
 #define GLM_ENABLE_EXPERIMENTAL
-#endif
+#include <glm/glm.hpp>
 #include <glm/gtx/quaternion.hpp>
+#include <glm/gtx/matrix_decompose.hpp>
+
 
 // Engine console storage definitions
 std::vector<std::string> ModuleEditor::engine_log;
@@ -175,6 +179,30 @@ bool ModuleEditor::Start()
     ImGui_ImplSDL3_InitForOpenGL(app.window->GetWindow(), app.window->GetContext());
     ImGui_ImplOpenGL3_Init("#version 330 core");
 
+    // ===== Crear framebuffer para el viewport =====
+    glGenFramebuffers(1, &sceneFramebuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, sceneFramebuffer);
+
+    // Crear textura para render
+    glGenTextures(1, &sceneTexture);
+    glBindTexture(GL_TEXTURE_2D, sceneTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, sceneFBWidth, sceneFBHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneTexture, 0);
+
+    // Depth + stencil buffer
+    glGenRenderbuffers(1, &sceneRBO);
+    glBindRenderbuffer(GL_RENDERBUFFER, sceneRBO);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, sceneFBWidth, sceneFBHeight);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, sceneRBO);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        PushEngineLog("ERROR: Scene framebuffer not complete!");
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+
     // Log initial status
     PushEngineLog("Starting Engine...");
     PushEnginePrintf("IMGUI: Initialized (version: %s)", ImGui::GetVersion());
@@ -250,6 +278,50 @@ bool ModuleEditor::Update()
             if (prev_inspector != show_inspector_window)
                 PushEnginePrintf("Inspector Window %s", show_inspector_window ? "opened" : "closed");
 
+            ImGui::Separator();
+
+            // Submenu de Gizmo
+            if (ImGui::BeginMenu("Gizmo"))
+            {
+                if (ImGui::MenuItem("Translate", "W", currentGizmoOperation == GizmoOperation::TRANSLATE))
+                {
+                    currentGizmoOperation = GizmoOperation::TRANSLATE;
+                    PushEngineLog("Gizmo mode: TRANSLATE");
+                }
+
+                if (ImGui::MenuItem("Rotate", "E", currentGizmoOperation == GizmoOperation::ROTATE))
+                {
+                    currentGizmoOperation = GizmoOperation::ROTATE;
+                    PushEngineLog("Gizmo mode: ROTATE");
+                }
+
+                if (ImGui::MenuItem("Scale", "R", currentGizmoOperation == GizmoOperation::SCALE))
+                {
+                    currentGizmoOperation = GizmoOperation::SCALE;
+                    PushEngineLog("Gizmo mode: SCALE");
+                }
+
+                ImGui::Separator();
+
+                if (ImGui::MenuItem("World Space", NULL, currentGizmoMode == GizmoMode::WORLD))
+                {
+                    currentGizmoMode = GizmoMode::WORLD;
+                    PushEngineLog("Gizmo space: WORLD");
+                }
+
+                if (ImGui::MenuItem("Local Space", NULL, currentGizmoMode == GizmoMode::LOCAL))
+                {
+                    currentGizmoMode = GizmoMode::LOCAL;
+                    PushEngineLog("Gizmo space: LOCAL");
+                }
+
+                ImGui::Separator();
+
+                ImGui::MenuItem("Use Snap", NULL, &useSnap);
+
+                ImGui::EndMenu();
+            }
+
             // Configuration submenu inside View
             if (ImGui::BeginMenu("Configuration"))
             {
@@ -323,6 +395,39 @@ bool ModuleEditor::Update()
             ImGui::EndMenu();
         }
 
+        if (ImGui::BeginMenu("Debug"))
+        {
+            auto& app = Application::GetInstance();
+
+            if (ImGui::MenuItem("Show AABBs", NULL, app.opengl ? app.opengl->showAABBs : false))
+            {
+                if (app.opengl)
+                {
+                    app.opengl->showAABBs = !app.opengl->showAABBs;
+                    PushEnginePrintf("AABB visualization: %s", app.opengl->showAABBs ? "ON" : "OFF");
+                }
+            }
+
+            if (ImGui::MenuItem("Show Grid", NULL, app.opengl->showGrid))
+            {
+                app.opengl->showGrid = !app.opengl->showGrid;
+                PushEnginePrintf("Grid: %s", app.opengl->showGrid ? "ON" : "OFF");
+            }
+
+            ImGui::Separator();
+
+            if (ImGui::MenuItem("Update All AABBs"))
+            {
+                if (app.moduleScene)
+                {
+                    app.moduleScene->UpdateAllAABBs();
+                    PushEngineLog("All AABBs updated");
+                }
+            }
+
+            ImGui::EndMenu();
+        }
+
         ImGui::EndMainMenuBar();
     }
 
@@ -359,6 +464,47 @@ bool ModuleEditor::Update()
 
         ImGui::End();
     }
+
+    // ===== CALCULAR ÁREA DEL VIEWPORT 3D =====
+    ImGuiViewport* mainViewport = ImGui::GetMainViewport();
+
+    float hierWidth = 260.0f;
+    float inspWidth = 310.0f;
+    float consoleHeight = 410.0f;
+
+    viewportPos = ImVec2(mainViewport->WorkPos.x + hierWidth, mainViewport->WorkPos.y);
+    viewportSize = ImVec2(mainViewport->WorkSize.x - hierWidth - inspWidth,
+        mainViewport->WorkSize.y - consoleHeight);
+
+    // ===== Renderizar escena al framebuffer =====
+    if (sceneFramebuffer != 0 && Application::GetInstance().moduleScene)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, sceneFramebuffer);
+        glViewport(0, 0, sceneFBWidth, sceneFBHeight);
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        // Renderizar todos los GameObjects
+        Application::GetInstance().moduleScene->RenderScene();
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    // ===== Mostrar framebuffer en el viewport =====
+    ImGui::SetCursorPos(ImVec2(viewportPos.x, viewportPos.y));
+    ImGui::Image((ImTextureID)(intptr_t)sceneTexture, viewportSize, ImVec2(0, 1), ImVec2(1, 0));
+
+
+    ImVec2 mousePos = ImGui::GetMousePos();
+    isMouseOverViewport = (mousePos.x >= viewportPos.x &&
+        mousePos.x <= viewportPos.x + viewportSize.x &&
+        mousePos.y >= viewportPos.y &&
+        mousePos.y <= viewportPos.y + viewportSize.y);
+
+    // ===== GIZMOS (ANTES de Mouse Picking) =====
+    HandleGizmo();
+
+    // ===== MOUSE PICKING =====
+    HandleMousePicking();
 
     // Hierarchy window
     if (show_hierarchy_window)
@@ -458,6 +604,53 @@ bool ModuleEditor::Update()
         else
         {
             ImGui::Text("Selected: %s", selected->GetName());
+            ImGui::Separator();
+
+            // ===== CONTROLES DE GIZMO (NUEVO) =====
+            if (ImGui::CollapsingHeader("Gizmo Controls", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                ImGui::Text("Operation Mode:");
+
+                if (ImGui::RadioButton("Translate (W)", currentGizmoOperation == GizmoOperation::TRANSLATE))
+                {
+                    currentGizmoOperation = GizmoOperation::TRANSLATE;
+                }
+                ImGui::SameLine();
+                if (ImGui::RadioButton("Rotate (E)", currentGizmoOperation == GizmoOperation::ROTATE))
+                {
+                    currentGizmoOperation = GizmoOperation::ROTATE;
+                }
+                ImGui::SameLine();
+                if (ImGui::RadioButton("Scale (R)", currentGizmoOperation == GizmoOperation::SCALE))
+                {
+                    currentGizmoOperation = GizmoOperation::SCALE;
+                }
+
+                ImGui::Separator();
+
+                ImGui::Text("Coordinate Space:");
+                if (ImGui::RadioButton("World", currentGizmoMode == GizmoMode::WORLD))
+                {
+                    currentGizmoMode = GizmoMode::WORLD;
+                }
+                ImGui::SameLine();
+                if (ImGui::RadioButton("Local", currentGizmoMode == GizmoMode::LOCAL))
+                {
+                    currentGizmoMode = GizmoMode::LOCAL;
+                }
+
+                ImGui::Separator();
+
+                ImGui::Checkbox("Use Snap", &useSnap);
+
+                if (useSnap)
+                {
+                    ImGui::DragFloat("Translate Snap", &snapValues[0], 0.1f, 0.01f, 10.0f);
+                    ImGui::DragFloat("Rotate Snap (deg)", &snapValues[1], 1.0f, 1.0f, 90.0f);
+                    ImGui::DragFloat("Scale Snap", &snapValues[2], 0.01f, 0.01f, 1.0f);
+                }
+            }
+
             ImGui::Separator();
 
             // --- Transform Section ---
@@ -801,4 +994,192 @@ void ModuleEditor::ProcessEvent(const SDL_Event& event)
 
     // Forward event to ImGui backend
     ImGui_ImplSDL3_ProcessEvent(&event);
+}
+
+// ===== IMPLEMENTACIÓN DE HANDLEGIZMO =====
+void ModuleEditor::HandleGizmo()
+{
+    auto& app = Application::GetInstance();
+
+    if (!app.camera || !app.moduleScene)
+        return;
+
+    GameObject* selected = app.moduleScene->GetSelectedGameObject();
+    if (!selected)
+        return; // No hay nada seleccionado
+
+    ComponentTransform* transform = selected->GetComponent<ComponentTransform>();
+    if (!transform)
+        return; // El objeto no tiene transform
+
+    // ===== DETECTAR TECLAS W, E, R para cambiar modo =====
+    ImGuiIO& io = ImGui::GetIO();
+
+    if (ImGui::IsKeyPressed(ImGuiKey_W))
+    {
+        currentGizmoOperation = GizmoOperation::TRANSLATE;
+        PushEngineLog("Gizmo mode: TRANSLATE");
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_E))
+    {
+        currentGizmoOperation = GizmoOperation::ROTATE;
+        PushEngineLog("Gizmo mode: ROTATE");
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_R))
+    {
+        currentGizmoOperation = GizmoOperation::SCALE;
+        PushEngineLog("Gizmo mode: SCALE");
+    }
+
+    // ===== CONFIGURAR IMGUIZMO =====
+    ImGuizmo::SetOrthographic(false);
+    ImGuizmo::SetDrawlist();
+
+    // Configurar el viewport para ImGuizmo
+    ImGuizmo::SetRect(viewportPos.x, viewportPos.y, viewportSize.x, viewportSize.y);
+
+    // Obtener matrices de cámara
+    glm::mat4 view = app.camera->getViewMatrix();
+    glm::mat4 projection = app.camera->getProjectionMatrix();
+
+    // Obtener matriz del GameObject
+    glm::mat4 modelMatrix = transform->GetGlobalMatrix();
+
+    // Convertir operación a ImGuizmo::OPERATION
+    ImGuizmo::OPERATION operation;
+    switch (currentGizmoOperation)
+    {
+    case GizmoOperation::TRANSLATE: operation = ImGuizmo::TRANSLATE; break;
+    case GizmoOperation::ROTATE:    operation = ImGuizmo::ROTATE;    break;
+    case GizmoOperation::SCALE:     operation = ImGuizmo::SCALE;     break;
+    }
+
+    // Convertir modo a ImGuizmo::MODE
+    ImGuizmo::MODE mode = (currentGizmoMode == GizmoMode::LOCAL)
+        ? ImGuizmo::LOCAL
+        : ImGuizmo::WORLD;
+
+    // Snap settings
+    float* snap = nullptr;
+    if (useSnap)
+    {
+        switch (currentGizmoOperation)
+        {
+        case GizmoOperation::TRANSLATE: snap = &snapValues[0]; break;
+        case GizmoOperation::ROTATE:    snap = &snapValues[1]; break;
+        case GizmoOperation::SCALE:     snap = &snapValues[2]; break;
+        }
+    }
+
+    // ===== DIBUJAR Y MANIPULAR GIZMO =====
+    glm::mat4 deltaMatrix;
+
+    bool manipulated = ImGuizmo::Manipulate(
+        glm::value_ptr(view),
+        glm::value_ptr(projection),
+        operation,
+        mode,
+        glm::value_ptr(modelMatrix),
+        glm::value_ptr(deltaMatrix),
+        snap
+    );
+
+    // Si el usuario está manipulando el gizmo, actualizar el transform
+    if (manipulated && ImGuizmo::IsUsing())
+    {
+        // Descomponer la matriz en Position, Rotation, Scale
+        glm::vec3 position, scale, skew;
+        glm::vec4 perspective;
+        glm::quat rotation;
+
+        glm::decompose(modelMatrix, scale, rotation, position, skew, perspective);
+
+        // Aplicar al ComponentTransform
+        // IMPORTANTE: Solo si no tiene padre, o ajustar para transformaciones locales
+        if (!selected->GetParent())
+        {
+            transform->SetPosition(position);
+            transform->SetRotation(rotation);
+            transform->SetScale(scale);
+        }
+        else
+        {
+            // Si tiene padre, necesitas calcular la transformación local
+            GameObject* parent = selected->GetParent();
+            ComponentTransform* parentTransform = parent->GetComponent<ComponentTransform>();
+
+            if (parentTransform)
+            {
+                glm::mat4 parentMatrix = parentTransform->GetGlobalMatrix();
+                glm::mat4 localMatrix = glm::inverse(parentMatrix) * modelMatrix;
+
+                glm::vec3 localPos, localScale, localSkew;
+                glm::vec4 localPerspective;
+                glm::quat localRotation;
+
+                glm::decompose(localMatrix, localScale, localRotation, localPos, localSkew, localPerspective);
+
+                transform->SetPosition(localPos);
+                transform->SetRotation(localRotation);
+                transform->SetScale(localScale);
+            }
+        }
+
+        // Actualizar AABBs después de transformar
+        app.moduleScene->UpdateAllAABBs();
+    }
+}
+
+// ===== MODIFICAR HandleMousePicking para no interferir con Gizmo =====
+void ModuleEditor::HandleMousePicking()
+{
+    auto& app = Application::GetInstance();
+
+    if (!app.camera || !app.moduleScene || !app.input)
+        return;
+
+    ImGuiIO& io = ImGui::GetIO();
+
+    // NO hacer picking si ImGuizmo está siendo usado
+    if (ImGuizmo::IsUsing() || ImGuizmo::IsOver())
+        return;
+
+    // Solo hacer picking si:
+    // 1. Click izquierdo
+    // 2. Mouse sobre viewport 3D
+    // 3. No estamos sobre UI de ImGui
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+        isMouseOverViewport &&
+        !io.WantCaptureMouse)
+    {
+        ImVec2 mousePos = ImGui::GetMousePos();
+
+        float relativeX = mousePos.x - viewportPos.x;
+        float relativeY = mousePos.y - viewportPos.y;
+
+        if (relativeX >= 0 && relativeX < viewportSize.x &&
+            relativeY >= 0 && relativeY < viewportSize.y)
+        {
+            Ray pickRay = app.camera->ScreenPointToRay(
+                relativeX,
+                relativeY,
+                (int)viewportSize.x,
+                (int)viewportSize.y
+            );
+
+            app.moduleScene->UpdateAllAABBs();
+            GameObject* pickedObject = app.moduleScene->PerformRaycast(pickRay);
+
+            if (pickedObject)
+            {
+                app.moduleScene->SetSelectedGameObject(pickedObject);
+                PushEnginePrintf("Picked GameObject: %s", pickedObject->GetName());
+            }
+            else
+            {
+                app.moduleScene->SetSelectedGameObject(nullptr);
+                PushEngineLog("No object picked - selection cleared");
+            }
+        }
+    }
 }
