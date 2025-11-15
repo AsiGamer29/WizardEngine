@@ -30,8 +30,8 @@ private:
     AABB globalAABB;  // AABB en espacio global (world space)
 
     // Helper para intersección con triángulos
-    bool IntersectRayTriangles(const Ray& rayLocal, ComponentMesh* mesh,
-        float& closestDist, glm::vec3& hitPoint);
+    bool IntersectRayTriangles(const Ray& rayLocal, ComponentMesh* mesh, float& closestDist, glm::vec3& hitPoint);
+    
 
 public:
     GameObject(const char* name);
@@ -59,15 +59,14 @@ public:
     void UpdateAABB();
     const AABB& GetAABB() const { return globalAABB; }
 
-    // Sistema de picking
-    bool IntersectRay(const Ray& ray, RayHit& hit);
-
     // Gestión de jerarquía
     void AddChild(GameObject* child);
     void RemoveChild(GameObject* child);
     void SetParent(GameObject* newParent);
     GameObject* GetParent() const { return parent; }
     const std::vector<GameObject*>& GetChildren() const { return children; }
+
+    bool IntersectRay(const Ray& ray, RayHit& outHit);
 
     // Getters/Setters
     const char* GetName() const { return name.c_str(); }

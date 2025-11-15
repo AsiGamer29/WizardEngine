@@ -37,7 +37,7 @@ private:
     bool isGeometryActive;
 
     void CreateGrid(int size);
-    void DrawGrid();
+  
 
     // NUEVAS FUNCIONES PARA GAMEOBJECTS
     void DrawGameObjects(GameObject* go);
@@ -58,6 +58,8 @@ public:
     bool PreUpdate() override;
     bool Update() override;
     bool CleanUp() override;
+
+    void DrawGrid();
 
     void LoadGeometry(const std::string& type);
 

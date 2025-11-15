@@ -274,3 +274,33 @@ AABB ComponentMesh::GetLocalAABB()
     }
     return localAABB;
 }
+
+void ComponentMesh::UpdateFlatVertices() const
+{
+    if (!flatVerticesDirty)
+        return;
+
+    flatVertices.clear();
+    flatVertices.reserve(vertices.size() * 8);
+
+    // Formato: [x, y, z, nx, ny, nz, u, v]
+    for (const MeshVertex& v : vertices)
+    {
+        flatVertices.push_back(v.Position.x);
+        flatVertices.push_back(v.Position.y);
+        flatVertices.push_back(v.Position.z);
+        flatVertices.push_back(v.Normal.x);
+        flatVertices.push_back(v.Normal.y);
+        flatVertices.push_back(v.Normal.z);
+        flatVertices.push_back(v.TexCoords.x);
+        flatVertices.push_back(v.TexCoords.y);
+    }
+
+    flatVerticesDirty = false;
+}
+
+const std::vector<float>& ComponentMesh::GetVertices() const
+{
+    UpdateFlatVertices();
+    return flatVertices;
+}

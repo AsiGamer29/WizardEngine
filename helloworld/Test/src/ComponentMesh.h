@@ -19,14 +19,25 @@ struct MeshVertex {
 class ComponentMesh : public Component
 {
 private:
+    // Representación estructurada (para OpenGL y uso interno)
     std::vector<MeshVertex> vertices;
     std::vector<unsigned int> indices;
-    GLuint VAO, VBO, EBO, numIndices, numVertices;
+
+    // Representación plana (para raycast - generada bajo demanda)
+    mutable std::vector<float> flatVertices;
+    mutable bool flatVerticesDirty = true;
+
+    GLuint VAO = 0;
+    GLuint VBO = 0;
+    GLuint EBO = 0;
+    GLuint numIndices, numVertices;
+
     AABB localAABB;
     bool aabbDirty = true;
 
     void SetupMesh();
     void CleanupBuffers();
+    void UpdateFlatVertices() const;
 
 public:
     ComponentMesh(GameObject* owner);
@@ -48,13 +59,13 @@ public:
     // Debug: dibujar normales en pantalla
     void DrawNormals(const glm::mat4& modelMatrix, float length = 0.1f);
 
-    // Getters
+    // GETTERS NECESARIOS PARA RAYCAST
+    const std::vector<float>& GetVertices() const;
+    const std::vector<MeshVertex>& GetMeshVertices() const { return vertices; }
+    const std::vector<unsigned int>& GetIndices() const { return indices; }
+
     size_t GetVertexCount() const { return vertices.size(); }
     size_t GetIndexCount() const { return indices.size(); }
-
-    // CORREGIDO: Devolver referencias a vectores correctos
-    const std::vector<MeshVertex>& GetVertices() const { return vertices; }
-    const std::vector<unsigned int>& GetIndices() const { return indices; }
 
     // Sistema de AABB
     AABB CalculateLocalAABB() const;

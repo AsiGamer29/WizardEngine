@@ -439,14 +439,12 @@ bool OpenGL::Update()
                 {
                     ModuleEditor::PushEnginePrintf("=== LOADING MODEL: ");
 
-                    // No limpiar la escena ni otros GameObjects
                     if (!app.moduleScene)
                     {
                         std::cerr << "ERROR: moduleScene is null!" << std::endl;
                         continue;
                     }
 
-                    // Cargar modelo: ModuleScene se encarga de añadirlo al root
                     app.moduleScene->LoadModel(filePath.c_str());
 
                     GameObject* root = app.moduleScene->GetRoot();
@@ -456,7 +454,6 @@ bool OpenGL::Update()
                         continue;
                     }
 
-                    // El modelo recién cargado será el último hijo del root
                     GameObject* newModel = root->GetChildren().back();
                     if (!newModel)
                     {
@@ -464,7 +461,6 @@ bool OpenGL::Update()
                         continue;
                     }
 
-                    // Transformaciones: escalar y rotar
                     ComponentTransform* transform = newModel->GetComponent<ComponentTransform>();
                     if (transform)
                     {
@@ -472,7 +468,6 @@ bool OpenGL::Update()
                         std::cout << "Applied scale and rotation to new model." << std::endl;
                     }
 
-                    // Auto-seleccionar el modelo recién cargado
                     app.moduleScene->SetSelectedGameObject(newModel);
                     std::cout << "New model auto-selected: " << newModel->GetName() << std::endl;
 
@@ -502,13 +497,11 @@ bool OpenGL::Update()
                         continue;
                     }
 
-                    // Recolectar texturas en uso antes
                     std::set<GLuint> texturesInUse;
                     GameObject* root = app.moduleScene->GetRoot();
                     if (root)
                         CollectTexturesInUse(root, texturesInUse);
 
-                    // Aplicar textura al objeto seleccionado
                     GameObject* selected = app.moduleScene->GetSelectedGameObject();
                     if (selected)
                     {
@@ -516,12 +509,10 @@ bool OpenGL::Update()
                         std::cout << "Texture applied to selected object: " << selected->GetName() << std::endl;
                     }
 
-                    // Recolectar texturas en uso después
                     std::set<GLuint> newTexturesInUse;
                     if (root)
                         CollectTexturesInUse(root, newTexturesInUse);
 
-                    // Eliminar texturas antiguas no usadas
                     for (GLuint oldTex : texturesInUse)
                     {
                         if (newTexturesInUse.find(oldTex) == newTexturesInUse.end() &&

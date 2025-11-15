@@ -150,22 +150,22 @@ void Camera::updateCameraVectors()
 
 Ray Camera::ScreenPointToRay(float mouseX, float mouseY, int screenWidth, int screenHeight)
 {
-    // Normalizar coordenadas de pantalla a [-1, 1]
+    // Normalizar coordenadas del mouse a [-1, 1]
     float x = (2.0f * mouseX) / screenWidth - 1.0f;
-    float y = 1.0f - (2.0f * mouseY) / screenHeight; // Invertir Y
+    float y = 1.0f - (2.0f * mouseY) / screenHeight;  // Invertir Y
 
-    // Crear punto en NDC (Normalized Device Coordinates)
-    glm::vec4 rayClip(x, y, -1.0f, 1.0f);
+    // Crear punto en Near Plane (NDC)
+    glm::vec4 rayClip = glm::vec4(x, y, -1.0f, 1.0f);
 
-    // Convertir a espacio de vista
-    glm::mat4 invProjection = glm::inverse(getProjectionMatrix());
-    glm::vec4 rayEye = invProjection * rayClip;
+    // Transformar a Eye Space
+    glm::mat4 projInverse = glm::inverse(getProjectionMatrix());
+    glm::vec4 rayEye = projInverse * rayClip;
     rayEye = glm::vec4(rayEye.x, rayEye.y, -1.0f, 0.0f);
 
-    // Convertir a espacio del mundo
-    glm::mat4 invView = glm::inverse(getViewMatrix());
-    glm::vec4 rayWorld = invView * rayEye;
+    // Transformar a World Space
+    glm::mat4 viewInverse = glm::inverse(getViewMatrix());
+    glm::vec4 rayWorld = viewInverse * rayEye;
     glm::vec3 rayDirection = glm::normalize(glm::vec3(rayWorld));
 
-    return Ray(getPosition(), rayDirection);
+    return Ray(position, rayDirection);
 }

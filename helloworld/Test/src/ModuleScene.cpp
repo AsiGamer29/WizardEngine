@@ -1,4 +1,5 @@
 #include "ModuleScene.h"
+#include "Application.h"
 #include "GameObject.h"
 #include "BaseComponent.h"
 #include "ComponentTransform.h"
@@ -58,34 +59,21 @@ bool ModuleScene::PostUpdate()
     return true;
 }
 
+
 void ModuleScene::RenderScene()
 {
-    // Recorrer todos los GameObjects
-    for (GameObject* go : allGameObjects)
+    auto& app = Application::GetInstance();
+
+    if (!app.opengl)
+        return;
+
+    // 1. Dibujar el GRID primero
+    app.opengl->DrawGrid();
+
+    // 2. Dibujar todos los GameObjects con AABBs
+    if (root)
     {
-        if (!go) continue;
-
-        ComponentMesh* mesh = go->GetComponent<ComponentMesh>();
-        ComponentMaterial* mat = go->GetComponent<ComponentMaterial>();
-        ComponentTransform* tr = go->GetComponent<ComponentTransform>();
-
-        if (mesh && tr)
-        {
-            // Configurar matriz del objeto
-            glm::mat4 model = tr->GetGlobalMatrix();
-            // Aquí normalmente le pasarías la matriz al shader
-            // glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-
-            // Configurar material
-            if (mat)
-            {
-                GLuint tex = mat->GetTextureID();
-                if (tex) glBindTexture(GL_TEXTURE_2D, tex);
-            }
-
-            // Dibujar el mesh
-            mesh->Draw(); // Asumo que tienes un Draw() que hace glDrawElements o similar
-        }
+        app.opengl->DrawGameObjectsWithAABB(root);
     }
 }
 
@@ -339,6 +327,27 @@ void ModuleScene::UpdateAllAABBs()
         root->UpdateAABB();
 }
 
+GameObject* ModuleScene::PerformRaycast(const Ray& ray)
+{
+    std::vector<RayHit> candidates;
+
+    // Recolectar todos los hits desde el root
+    if (root)
+        CollectRaycastCandidates(root, ray, candidates);
+
+    if (candidates.empty())
+        return nullptr;
+
+    // Ordenar por distancia (más cercano primero)
+    std::sort(candidates.begin(), candidates.end(),
+        [](const RayHit& a, const RayHit& b) {
+            return a.distance < b.distance;
+        });
+
+    // Retornar el más cercano
+    return candidates[0].gameObject;
+}
+
 void ModuleScene::CollectRaycastCandidates(GameObject* go, const Ray& ray, std::vector<RayHit>& candidates)
 {
     if (!go || !go->IsActive())
@@ -356,25 +365,4 @@ void ModuleScene::CollectRaycastCandidates(GameObject* go, const Ray& ray, std::
     {
         CollectRaycastCandidates(child, ray, candidates);
     }
-}
-
-GameObject* ModuleScene::PerformRaycast(const Ray& ray)
-{
-    std::vector<RayHit> candidates;
-
-    // Recolectar todos los hits
-    if (root)
-        CollectRaycastCandidates(root, ray, candidates);
-
-    if (candidates.empty())
-        return nullptr;
-
-    // Ordenar por distancia (más cercano primero)
-    std::sort(candidates.begin(), candidates.end(),
-        [](const RayHit& a, const RayHit& b) {
-            return a.distance < b.distance;
-        });
-
-    // Retornar el más cercano
-    return candidates[0].gameObject;
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include "Module.h"
 #include "imgui.h"
+#include <glad/glad.h>  // <-- NECESARIO para GLuint
 #include <string>
 #include <vector>
 #include <mutex>
@@ -22,7 +23,7 @@ public:
 
     void ProcessEvent(const SDL_Event& event);
     void HandleMousePicking();
-    void HandleGizmo();  // <--- NUEVO: Manejo de gizmos
+    void HandleGizmo();
 
     // API for engine modules to report messages to the editor console
     static void PushEngineLog(const std::string& msg);
@@ -32,7 +33,6 @@ public:
     GLuint sceneFramebuffer = 0;
     GLuint sceneTexture = 0;
     GLuint sceneRBO = 0;
-
     int sceneFBWidth = 1280;
     int sceneFBHeight = 720;
 
@@ -64,11 +64,11 @@ private:
     int fps_count = 0;
 
     // Mouse picking viewport tracking
-    bool isMouseOverViewport;
+    bool isMouseOverViewport = false;
     ImVec2 viewportPos;
     ImVec2 viewportSize;
 
-    // ===== NUEVO: Estado de Gizmos =====
+    // ===== Estado de Gizmos =====
     enum class GizmoOperation
     {
         TRANSLATE,
@@ -108,6 +108,4 @@ private:
     static std::mutex engine_log_mutex;
     static size_t engine_log_max_messages;
     static bool engine_log_auto_scroll;
-    
-
 };

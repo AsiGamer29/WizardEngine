@@ -33,7 +33,7 @@ std::mutex ModuleEditor::engine_log_mutex;
 size_t ModuleEditor::engine_log_max_messages = 8192;
 bool ModuleEditor::engine_log_auto_scroll = true;
 
-static GameObject* editor_selected_gameobject = nullptr; // preparación para selección desde editor
+static GameObject* editor_selected_gameobject = nullptr;
 
 void ModuleEditor::PushEngineLog(const std::string& msg)
 {
@@ -64,11 +64,9 @@ static void CreateGeometryGameObject(const std::string& geometryType) {
         return;
     }
 
-    // Crear un nombre único para el GameObject
     static int geometryCounter = 0;
     std::string objectName = geometryType + "_" + std::to_string(++geometryCounter);
 
-    // Crear el GameObject usando ModuleScene
     GameObject* gameObject = app.moduleScene->CreateGameObject(objectName.c_str());
 
     if (!gameObject) {
@@ -76,7 +74,6 @@ static void CreateGeometryGameObject(const std::string& geometryType) {
         return;
     }
 
-    // COMPONENTE TRANSFORM (normalmente GameObject ya lo crea por defecto)
     ComponentTransform* transform = static_cast<ComponentTransform*>(
         gameObject->GetComponent(ComponentType::TRANSFORM)
         );
@@ -93,13 +90,11 @@ static void CreateGeometryGameObject(const std::string& geometryType) {
         transform->SetRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
     }
 
-    // COMPONENTE MESH
     ComponentMesh* meshComp = static_cast<ComponentMesh*>(
         gameObject->CreateComponent(ComponentType::MESH)
         );
 
     if (meshComp) {
-        // Crear la geometría según el tipo
         MeshGeometry geom;
 
         if (geometryType == "Cube") {
@@ -118,11 +113,9 @@ static void CreateGeometryGameObject(const std::string& geometryType) {
             geom = GeometryGenerator::CreatePlane(5.0f, 5.0f);
         }
 
-        // Cargar la geometría en el componente mesh
         meshComp->LoadFromGeometry(&geom);
     }
 
-    // COMPONENTE MATERIAL
     ComponentMaterial* materialComp = (ComponentMaterial*)gameObject->CreateComponent(ComponentType::MATERIAL);
 
     ModuleEditor::PushEnginePrintf("GameObject created: %s", objectName.c_str());
@@ -134,7 +127,6 @@ static void CreateGeometryGameObject(const std::string& geometryType) {
 
 ModuleEditor::ModuleEditor()
 {
-    // initialize fps history
     fps_pos = 0;
     fps_count = 0;
     for (int i = 0; i < FPS_HISTORY_SIZE; ++i) fps_history[i] = 0.0f;
@@ -146,7 +138,6 @@ ModuleEditor::~ModuleEditor()
 
 bool ModuleEditor::Start()
 {
-    // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -154,13 +145,10 @@ bool ModuleEditor::Start()
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
-    // Setup Dear ImGui style
     ImGui::StyleColorsDark();
 
-    // Get window and context from Application
     auto& app = Application::GetInstance();
 
-    // Initialize settings from actual modules
     if (app.window)
     {
         settings.window_width = app.window->GetWidth();
@@ -175,7 +163,6 @@ bool ModuleEditor::Start()
         settings.mouse_sensitivity = 1.0f;
     }
 
-    // Setup Platform/Renderer backends
     ImGui_ImplSDL3_InitForOpenGL(app.window->GetWindow(), app.window->GetContext());
     ImGui_ImplOpenGL3_Init("#version 330 core");
 
@@ -183,7 +170,6 @@ bool ModuleEditor::Start()
     glGenFramebuffers(1, &sceneFramebuffer);
     glBindFramebuffer(GL_FRAMEBUFFER, sceneFramebuffer);
 
-    // Crear textura para render
     glGenTextures(1, &sceneTexture);
     glBindTexture(GL_TEXTURE_2D, sceneTexture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, sceneFBWidth, sceneFBHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
@@ -191,7 +177,6 @@ bool ModuleEditor::Start()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneTexture, 0);
 
-    // Depth + stencil buffer
     glGenRenderbuffers(1, &sceneRBO);
     glBindRenderbuffer(GL_RENDERBUFFER, sceneRBO);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, sceneFBWidth, sceneFBHeight);
@@ -202,8 +187,6 @@ bool ModuleEditor::Start()
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-
-    // Log initial status
     PushEngineLog("Starting Engine...");
     PushEnginePrintf("IMGUI: Initialized (version: %s)", ImGui::GetVersion());
 
@@ -225,7 +208,6 @@ bool ModuleEditor::Start()
 
 bool ModuleEditor::PreUpdate()
 {
-    // Start the Dear ImGui frame
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
@@ -235,7 +217,6 @@ bool ModuleEditor::PreUpdate()
 
 bool ModuleEditor::Update()
 {
-    // record current FPS
     float current_fps = ImGui::GetIO().Framerate;
     fps_history[fps_pos] = current_fps;
     fps_pos = (fps_pos + 1) % FPS_HISTORY_SIZE;
@@ -280,7 +261,6 @@ bool ModuleEditor::Update()
 
             ImGui::Separator();
 
-            // Submenu de Gizmo
             if (ImGui::BeginMenu("Gizmo"))
             {
                 if (ImGui::MenuItem("Translate", "W", currentGizmoOperation == GizmoOperation::TRANSLATE))
@@ -322,7 +302,6 @@ bool ModuleEditor::Update()
                 ImGui::EndMenu();
             }
 
-            // Configuration submenu inside View
             if (ImGui::BeginMenu("Configuration"))
             {
                 ImGui::MenuItem("Performance", NULL, &show_config_performance);
@@ -334,7 +313,6 @@ bool ModuleEditor::Update()
             ImGui::EndMenu();
         }
 
-        // MENÚ GEOMETRY - CREA GAMEOBJECTS
         if (ImGui::BeginMenu("Geometry"))
         {
             if (ImGui::MenuItem("Cube"))
@@ -431,7 +409,6 @@ bool ModuleEditor::Update()
         ImGui::EndMainMenuBar();
     }
 
-    // Show custom test window
     if (show_test_window)
     {
         ImGui::SetNextWindowPos(ImVec2(650, 50), ImGuiCond_FirstUseEver);
@@ -465,18 +442,36 @@ bool ModuleEditor::Update()
         ImGui::End();
     }
 
-    // ===== CALCULAR ÁREA DEL VIEWPORT 3D =====
+    // ===== CALCULAR DIMENSIONES DEL VIEWPORT 3D =====
     ImGuiViewport* mainViewport = ImGui::GetMainViewport();
 
     float hierWidth = 260.0f;
     float inspWidth = 310.0f;
-    float consoleHeight = 410.0f;
+    float consoleHeight = 200.0f;  // Altura de la consola en la parte inferior
 
-    viewportPos = ImVec2(mainViewport->WorkPos.x + hierWidth, mainViewport->WorkPos.y);
-    viewportSize = ImVec2(mainViewport->WorkSize.x - hierWidth - inspWidth,
-        mainViewport->WorkSize.y - consoleHeight);
+    // El viewport 3D ocupa desde arriba hasta donde empieza la consola
+    float viewportHeight = mainViewport->WorkSize.y - consoleHeight;
+    float viewportWidth = mainViewport->WorkSize.x;
 
-    // ===== Renderizar escena al framebuffer =====
+    // ===== REDIMENSIONAR FRAMEBUFFER SI ES NECESARIO =====
+    int newFBWidth = (int)viewportWidth;
+    int newFBHeight = (int)viewportHeight;
+
+    if (newFBWidth != sceneFBWidth || newFBHeight != sceneFBHeight)
+    {
+        sceneFBWidth = std::max(1, newFBWidth);
+        sceneFBHeight = std::max(1, newFBHeight);
+
+        // Redimensionar textura
+        glBindTexture(GL_TEXTURE_2D, sceneTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, sceneFBWidth, sceneFBHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+
+        // Redimensionar depth/stencil buffer
+        glBindRenderbuffer(GL_RENDERBUFFER, sceneRBO);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, sceneFBWidth, sceneFBHeight);
+    }
+
+    // ===== RENDERIZAR ESCENA AL FRAMEBUFFER =====
     if (sceneFramebuffer != 0 && Application::GetInstance().moduleScene)
     {
         glBindFramebuffer(GL_FRAMEBUFFER, sceneFramebuffer);
@@ -486,63 +481,139 @@ bool ModuleEditor::Update()
 
         // Renderizar todos los GameObjects
         Application::GetInstance().moduleScene->RenderScene();
+
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    // ===== Mostrar framebuffer en el viewport =====
-    ImGui::SetCursorPos(ImVec2(viewportPos.x, viewportPos.y));
-    ImGui::Image((ImTextureID)(intptr_t)sceneTexture, viewportSize, ImVec2(0, 1), ImVec2(1, 0));
+    // ===== MOSTRAR TEXTURA DEL FRAMEBUFFER EN IMGUI (Ocupa toda la ventana excepto consola) =====
+    // Calcular posición y tamaño del viewport
+    ImVec2 viewportWindowPos = ImVec2(mainViewport->WorkPos.x, mainViewport->WorkPos.y);
+    ImVec2 viewportWindowSize = ImVec2(viewportWidth, viewportHeight);
 
+    ImGui::SetNextWindowPos(viewportWindowPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(viewportWindowSize, ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
-    ImVec2 mousePos = ImGui::GetMousePos();
-    isMouseOverViewport = (mousePos.x >= viewportPos.x &&
-        mousePos.x <= viewportPos.x + viewportSize.x &&
-        mousePos.y >= viewportPos.y &&
-        mousePos.y <= viewportPos.y + viewportSize.y);
+    ImGuiWindowFlags viewportFlags =
+        ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoScrollWithMouse |
+        ImGuiWindowFlags_NoBringToFrontOnFocus |
+        ImGuiWindowFlags_NoFocusOnAppearing;
 
-    // ===== GIZMOS (ANTES de Mouse Picking) =====
+    ImGui::Begin("3D Viewport", nullptr, viewportFlags);
+
+    // Obtener el tamaño real disponible
+    ImVec2 contentSize = ImGui::GetContentRegionAvail();
+
+    // Calcular aspect ratio correcto
+    float aspect = contentSize.x / contentSize.y;
+    ImVec2 imageSize = contentSize;
+
+    // Centrar la imagen si es necesario
+    ImVec2 imagePos = ImGui::GetCursorPos();
+
+    ImGui::SetCursorPos(imagePos);
+    ImGui::Image((ImTextureID)(intptr_t)sceneTexture, imageSize, ImVec2(0, 1), ImVec2(1, 0));
+
+    // CRÍTICO: Hacer la imagen "clickeable" para mouse picking
+    bool imageHovered = ImGui::IsItemHovered();
+    bool imageClicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+
+    // CRÍTICO: Actualizar tracking del mouse sobre viewport
+    isMouseOverViewport = imageHovered;
+
+    viewportPos = ImGui::GetWindowPos();
+    viewportSize = ImGui::GetWindowSize();
+
+    // ===== DIBUJAR GIZMO DENTRO DEL VIEWPORT =====
     HandleGizmo();
 
-    // ===== MOUSE PICKING =====
-    HandleMousePicking();
+    // ===== MOUSE PICKING (dentro del viewport) =====
+    if (imageClicked && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver())
+    {
+        auto& app = Application::GetInstance();
+
+        if (app.camera && app.moduleScene)
+        {
+            ImVec2 mousePos = ImGui::GetMousePos();
+            float relativeX = mousePos.x - viewportPos.x;
+            float relativeY = mousePos.y - viewportPos.y;
+
+            PushEnginePrintf("Mouse picking - Relative pos: (%.1f, %.1f) Viewport size: (%.1f, %.1f)",
+                relativeX, relativeY, viewportSize.x, viewportSize.y);
+
+            if (relativeX >= 0 && relativeX < viewportSize.x &&
+                relativeY >= 0 && relativeY < viewportSize.y)
+            {
+                Ray pickRay = app.camera->ScreenPointToRay(
+                    relativeX,
+                    relativeY,
+                    (int)viewportSize.x,
+                    (int)viewportSize.y
+                );
+
+                PushEnginePrintf("Ray created - Origin: (%.2f, %.2f, %.2f) Dir: (%.2f, %.2f, %.2f)",
+                    pickRay.origin.x, pickRay.origin.y, pickRay.origin.z,
+                    pickRay.direction.x, pickRay.direction.y, pickRay.direction.z);
+
+                app.moduleScene->UpdateAllAABBs();
+                GameObject* pickedObject = app.moduleScene->PerformRaycast(pickRay);
+
+                if (pickedObject)
+                {
+                    app.moduleScene->SetSelectedGameObject(pickedObject);
+                    PushEnginePrintf("Picked GameObject: %s", pickedObject->GetName());
+                }
+                else
+                {
+                    app.moduleScene->SetSelectedGameObject(nullptr);
+                    PushEngineLog("No object picked - selection cleared");
+                }
+            }
+        }
+    }
+
+    ImGui::End();
+    ImGui::PopStyleVar();
+
+    // ===== MOUSE PICKING (ya no se necesita aquí, se hace dentro del viewport) =====
+    // HandleMousePicking();
 
     // Hierarchy window
     if (show_hierarchy_window)
     {
-        
         ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImVec2 hierPos = ImVec2(viewport->WorkPos.x + 10.0f, viewport->WorkPos.y + 10.0f);
         ImGui::SetNextWindowPos(hierPos, ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(250, 400), ImGuiCond_FirstUseEver); 
-        ImGuiWindowFlags hierFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse; 
+        ImGui::SetNextWindowSize(ImVec2(250, 400), ImGuiCond_FirstUseEver);
+        ImGuiWindowFlags hierFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
 
         ImGui::Begin("Hierarchy", NULL, hierFlags);
 
-        // Obtener GameObjects desde ModuleScene
         auto& app = Application::GetInstance();
         if (app.moduleScene)
         {
             const std::vector<GameObject*>& all = app.moduleScene->GetAllGameObjects();
 
-            // Mostrar en lista plana por ahora
             for (GameObject* go : all)
             {
                 if (!go) continue;
 
                 ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_Leaf;
-                // marcar seleccionado
                 if (go == editor_selected_gameobject || go == app.moduleScene->GetSelectedGameObject())
                 {
                     node_flags |= ImGuiTreeNodeFlags_Selected;
                 }
 
-                // Usamos TreeNodeEx para poder mostrar icono y seleccionar
                 bool node_open = ImGui::TreeNodeEx((void*)go, node_flags, "%s", go->GetName());
 
-                // Detectar click para seleccionar
                 if (ImGui::IsItemClicked())
                 {
-                    editor_selected_gameobject = go; 
+                    editor_selected_gameobject = go;
                     app.moduleScene->SetSelectedGameObject(go);
                     PushEnginePrintf("Selected GameObject: %s", go->GetName());
                 }
@@ -561,7 +632,7 @@ bool ModuleEditor::Update()
         ImGui::End();
     }
 
-    // Inspector window (nuevo)
+    // Inspector window
     if (show_inspector_window)
     {
         ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -569,8 +640,8 @@ bool ModuleEditor::Update()
         float inspectorH = 500.0f;
         ImVec2 inspPos = ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - inspectorW - 10.0f, viewport->WorkPos.y + 10.0f);
         ImGui::SetNextWindowPos(inspPos, ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(inspectorW, inspectorH), ImGuiCond_FirstUseEver); 
-        ImGuiWindowFlags inspFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse; 
+        ImGui::SetNextWindowSize(ImVec2(inspectorW, inspectorH), ImGuiCond_FirstUseEver);
+        ImGuiWindowFlags inspFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
 
         ImGui::Begin("Inspector", &show_inspector_window, inspFlags);
 
@@ -579,10 +650,8 @@ bool ModuleEditor::Update()
         if (app.moduleScene)
             selected = app.moduleScene->GetSelectedGameObject();
 
-        
         if ((void*)selected != inspectorOverrideTarget && inspectorOverrideTarget != nullptr)
         {
-            
             GameObject* prev = (GameObject*)inspectorOverrideTarget;
             if (prev)
             {
@@ -606,7 +675,7 @@ bool ModuleEditor::Update()
             ImGui::Text("Selected: %s", selected->GetName());
             ImGui::Separator();
 
-            // ===== CONTROLES DE GIZMO (NUEVO) =====
+            // ===== CONTROLES DE GIZMO =====
             if (ImGui::CollapsingHeader("Gizmo Controls", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 ImGui::Text("Operation Mode:");
@@ -673,7 +742,6 @@ bool ModuleEditor::Update()
                     float rotArr[3] = { euler.x, euler.y, euler.z };
                     if (ImGui::InputFloat3("Rotation", rotArr))
                     {
-                        // Convert back to quaternion
                         glm::vec3 rads = glm::radians(glm::vec3(rotArr[0], rotArr[1], rotArr[2]));
                         glm::quat newQ = glm::quat(rads);
                         tr->SetRotation(newQ);
@@ -704,7 +772,6 @@ bool ModuleEditor::Update()
 
                     ImGui::Checkbox("Show Normals", &show_normals);
 
-                    // TODO: Integrar visualización de normales en renderer; por ahora guardar flag en ModuleScene
                     if (app.moduleScene)
                     {
                         app.moduleScene->SetDebugShowNormals(show_normals);
@@ -729,7 +796,6 @@ bool ModuleEditor::Update()
                     ImGui::Text("Path: %s", path ? path : "(none)");
                     ImGui::Text("Size: %dx%d", w, h);
 
-                   
                     bool old = inspector_show_checkerboard;
                     ImGui::Checkbox("Use default checkerboard in scene", &inspector_show_checkerboard);
 
@@ -737,7 +803,6 @@ bool ModuleEditor::Update()
                     {
                         if (inspector_show_checkerboard)
                         {
-                            // enable override on selected material
                             if (inspectorCheckerTex == 0)
                             {
                                 inspectorCheckerTex = Texture::CreateCheckerboardTexture(512, 512, 32);
@@ -748,13 +813,11 @@ bool ModuleEditor::Update()
                         }
                         else
                         {
-                            // disable override
                             mat->ClearOverrideTexture();
                             inspectorOverrideTarget = nullptr;
                         }
                     }
 
-                    
                     GLuint previewTex = mat->GetTextureID();
                     ImGui::Image((ImTextureID)(intptr_t)previewTex, ImVec2(128, 128));
                 }
@@ -771,14 +834,16 @@ bool ModuleEditor::Update()
     // Console window
     if (show_console_window)
     {
-        ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
-
-        
+        // Calcular posición de la consola (parte inferior de la ventana)
         ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImVec2 consolePos = ImVec2(viewport->WorkPos.x + 10.0f, viewport->WorkPos.y + viewport->WorkSize.y - 10.0f);
-        ImGui::SetNextWindowPos(consolePos, ImGuiCond_Always, ImVec2(0.0f, 1.0f));
+        float consoleHeight = 200.0f;
+        ImVec2 consolePos = ImVec2(viewport->WorkPos.x, viewport->WorkPos.y + viewport->WorkSize.y - consoleHeight);
+        ImVec2 consoleSize = ImVec2(viewport->WorkSize.x, consoleHeight);
 
-        ImGuiWindowFlags consoleFlags = ImGuiWindowFlags_NoMove;
+        ImGui::SetNextWindowPos(consolePos, ImGuiCond_Always);
+        ImGui::SetNextWindowSize(consoleSize, ImGuiCond_Always);
+
+        ImGuiWindowFlags consoleFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
 
         ImGui::Begin("Console", &show_console_window, consoleFlags);
 
@@ -801,7 +866,7 @@ bool ModuleEditor::Update()
         ImGui::End();
     }
 
-    // Config: Performance (FPS graph)
+    // Config: Performance
     if (show_config_performance)
     {
         ImGui::Begin("Performance", &show_config_performance);
@@ -822,7 +887,7 @@ bool ModuleEditor::Update()
         ImGui::End();
     }
 
-    // Config: Modules (settings)
+    // Config: Modules
     if (show_config_modules)
     {
         ImGui::Begin("Modules Configuration", &show_config_modules);
@@ -849,7 +914,6 @@ bool ModuleEditor::Update()
 
         ImGui::Separator();
 
-        // Provide informational content for other modules instead of editable controls
         ImGui::Text("Renderer");
         ImGui::Indent();
         ImGui::TextWrapped("The Renderer module handles drawing the scene using OpenGL.\nIt controls rendering modes (wireframe/fill), clear color, culling and depth testing. Use the Scene/Renderer configuration or debug options in the main UI to toggle wireframe or other renderer-specific debug views.");
@@ -924,10 +988,18 @@ bool ModuleEditor::Update()
 
 bool ModuleEditor::PostUpdate()
 {
-    // Rendering
+    // IMPORTANTE: Solo renderizar ImGui, NO la escena 3D
+    // La escena ya se renderizó en Update() al framebuffer
+
     ImGui::Render();
 
-    // Configura para renderizado 2D
+    // Limpiar el backbuffer principal (para ImGui)
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, settings.window_width, settings.window_height);
+    glClearColor(0.15f, 0.15f, 0.15f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // Configurar para renderizado 2D (ImGui)
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
@@ -935,7 +1007,7 @@ bool ModuleEditor::PostUpdate()
 
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-    // Restaura el estado
+    // Restaurar estado para próximo frame
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
 
@@ -944,7 +1016,12 @@ bool ModuleEditor::PostUpdate()
 
 bool ModuleEditor::CleanUp()
 {
-    // Shutdown
+    // Limpiar framebuffer
+    if (sceneFramebuffer) glDeleteFramebuffers(1, &sceneFramebuffer);
+    if (sceneTexture) glDeleteTextures(1, &sceneTexture);
+    if (sceneRBO) glDeleteRenderbuffers(1, &sceneRBO);
+    if (inspectorCheckerTex) glDeleteTextures(1, &inspectorCheckerTex);
+
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
@@ -954,7 +1031,6 @@ bool ModuleEditor::CleanUp()
 
 void ModuleEditor::ProcessEvent(const SDL_Event& event)
 {
-    // Detect file drop events and log filename only
     if (event.type == SDL_EVENT_DROP_FILE)
     {
         const char* data = event.drop.data;
@@ -972,10 +1048,10 @@ void ModuleEditor::ProcessEvent(const SDL_Event& event)
             size_t dot = name.find_last_of('.');
             if (dot != std::string::npos && dot + 1 < name.size())
                 ext = name.substr(dot + 1);
-            std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c){ return std::tolower(c); });
+            std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
 
-            const std::vector<std::string> tex_ext = {"png","jpg","jpeg","bmp","tga","dds","tif","tiff","psd"};
-            const std::vector<std::string> model_ext = {"fbx","obj","gltf","glb","dae","3ds"};
+            const std::vector<std::string> tex_ext = { "png","jpg","jpeg","bmp","tga","dds","tif","tiff","psd" };
+            const std::vector<std::string> model_ext = { "fbx","obj","gltf","glb","dae","3ds" };
 
             if (std::find(tex_ext.begin(), tex_ext.end(), ext) != tex_ext.end())
             {
@@ -992,11 +1068,9 @@ void ModuleEditor::ProcessEvent(const SDL_Event& event)
         }
     }
 
-    // Forward event to ImGui backend
     ImGui_ImplSDL3_ProcessEvent(&event);
 }
 
-// ===== IMPLEMENTACIÓN DE HANDLEGIZMO =====
 void ModuleEditor::HandleGizmo()
 {
     auto& app = Application::GetInstance();
@@ -1006,46 +1080,51 @@ void ModuleEditor::HandleGizmo()
 
     GameObject* selected = app.moduleScene->GetSelectedGameObject();
     if (!selected)
-        return; // No hay nada seleccionado
+        return;
 
     ComponentTransform* transform = selected->GetComponent<ComponentTransform>();
     if (!transform)
-        return; // El objeto no tiene transform
+        return;
 
-    // ===== DETECTAR TECLAS W, E, R para cambiar modo =====
     ImGuiIO& io = ImGui::GetIO();
 
-    if (ImGui::IsKeyPressed(ImGuiKey_W))
+    // Solo permitir cambio de modo si no estamos usando el gizmo
+    if (!ImGuizmo::IsUsing())
     {
-        currentGizmoOperation = GizmoOperation::TRANSLATE;
-        PushEngineLog("Gizmo mode: TRANSLATE");
-    }
-    if (ImGui::IsKeyPressed(ImGuiKey_E))
-    {
-        currentGizmoOperation = GizmoOperation::ROTATE;
-        PushEngineLog("Gizmo mode: ROTATE");
-    }
-    if (ImGui::IsKeyPressed(ImGuiKey_R))
-    {
-        currentGizmoOperation = GizmoOperation::SCALE;
-        PushEngineLog("Gizmo mode: SCALE");
+        if (ImGui::IsKeyPressed(ImGuiKey_W))
+        {
+            currentGizmoOperation = GizmoOperation::TRANSLATE;
+            PushEngineLog("Gizmo mode: TRANSLATE");
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_E))
+        {
+            currentGizmoOperation = GizmoOperation::ROTATE;
+            PushEngineLog("Gizmo mode: ROTATE");
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_R))
+        {
+            currentGizmoOperation = GizmoOperation::SCALE;
+            PushEngineLog("Gizmo mode: SCALE");
+        }
     }
 
-    // ===== CONFIGURAR IMGUIZMO =====
+    // CRÍTICO: Configurar ImGuizmo correctamente
     ImGuizmo::SetOrthographic(false);
+
+    // Usar la drawlist de la ventana del viewport para que se dibuje dentro
     ImGuizmo::SetDrawlist();
 
-    // Configurar el viewport para ImGuizmo
+    // Establecer el rect donde se dibujará el gizmo
     ImGuizmo::SetRect(viewportPos.x, viewportPos.y, viewportSize.x, viewportSize.y);
 
-    // Obtener matrices de cámara
+    // Habilitar ImGuizmo para que capture el input
+    ImGuizmo::Enable(true);
+
     glm::mat4 view = app.camera->getViewMatrix();
     glm::mat4 projection = app.camera->getProjectionMatrix();
 
-    // Obtener matriz del GameObject
     glm::mat4 modelMatrix = transform->GetGlobalMatrix();
 
-    // Convertir operación a ImGuizmo::OPERATION
     ImGuizmo::OPERATION operation;
     switch (currentGizmoOperation)
     {
@@ -1054,12 +1133,10 @@ void ModuleEditor::HandleGizmo()
     case GizmoOperation::SCALE:     operation = ImGuizmo::SCALE;     break;
     }
 
-    // Convertir modo a ImGuizmo::MODE
     ImGuizmo::MODE mode = (currentGizmoMode == GizmoMode::LOCAL)
         ? ImGuizmo::LOCAL
         : ImGuizmo::WORLD;
 
-    // Snap settings
     float* snap = nullptr;
     if (useSnap)
     {
@@ -1071,7 +1148,6 @@ void ModuleEditor::HandleGizmo()
         }
     }
 
-    // ===== DIBUJAR Y MANIPULAR GIZMO =====
     glm::mat4 deltaMatrix;
 
     bool manipulated = ImGuizmo::Manipulate(
@@ -1084,18 +1160,14 @@ void ModuleEditor::HandleGizmo()
         snap
     );
 
-    // Si el usuario está manipulando el gizmo, actualizar el transform
     if (manipulated && ImGuizmo::IsUsing())
     {
-        // Descomponer la matriz en Position, Rotation, Scale
         glm::vec3 position, scale, skew;
         glm::vec4 perspective;
         glm::quat rotation;
 
         glm::decompose(modelMatrix, scale, rotation, position, skew, perspective);
 
-        // Aplicar al ComponentTransform
-        // IMPORTANTE: Solo si no tiene padre, o ajustar para transformaciones locales
         if (!selected->GetParent())
         {
             transform->SetPosition(position);
@@ -1104,7 +1176,6 @@ void ModuleEditor::HandleGizmo()
         }
         else
         {
-            // Si tiene padre, necesitas calcular la transformación local
             GameObject* parent = selected->GetParent();
             ComponentTransform* parentTransform = parent->GetComponent<ComponentTransform>();
 
@@ -1125,61 +1196,12 @@ void ModuleEditor::HandleGizmo()
             }
         }
 
-        // Actualizar AABBs después de transformar
         app.moduleScene->UpdateAllAABBs();
     }
 }
 
-// ===== MODIFICAR HandleMousePicking para no interferir con Gizmo =====
 void ModuleEditor::HandleMousePicking()
 {
-    auto& app = Application::GetInstance();
-
-    if (!app.camera || !app.moduleScene || !app.input)
-        return;
-
-    ImGuiIO& io = ImGui::GetIO();
-
-    // NO hacer picking si ImGuizmo está siendo usado
-    if (ImGuizmo::IsUsing() || ImGuizmo::IsOver())
-        return;
-
-    // Solo hacer picking si:
-    // 1. Click izquierdo
-    // 2. Mouse sobre viewport 3D
-    // 3. No estamos sobre UI de ImGui
-    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
-        isMouseOverViewport &&
-        !io.WantCaptureMouse)
-    {
-        ImVec2 mousePos = ImGui::GetMousePos();
-
-        float relativeX = mousePos.x - viewportPos.x;
-        float relativeY = mousePos.y - viewportPos.y;
-
-        if (relativeX >= 0 && relativeX < viewportSize.x &&
-            relativeY >= 0 && relativeY < viewportSize.y)
-        {
-            Ray pickRay = app.camera->ScreenPointToRay(
-                relativeX,
-                relativeY,
-                (int)viewportSize.x,
-                (int)viewportSize.y
-            );
-
-            app.moduleScene->UpdateAllAABBs();
-            GameObject* pickedObject = app.moduleScene->PerformRaycast(pickRay);
-
-            if (pickedObject)
-            {
-                app.moduleScene->SetSelectedGameObject(pickedObject);
-                PushEnginePrintf("Picked GameObject: %s", pickedObject->GetName());
-            }
-            else
-            {
-                app.moduleScene->SetSelectedGameObject(nullptr);
-                PushEngineLog("No object picked - selection cleared");
-            }
-        }
-    }
+    // Esta función ya no se usa - el mouse picking se maneja directamente
+    // dentro de la ventana del viewport usando ImGui::IsItemClicked()
 }

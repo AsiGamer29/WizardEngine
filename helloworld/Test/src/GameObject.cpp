@@ -3,6 +3,7 @@
 #include "ComponentTransform.h"
 #include "ComponentMesh.h"
 #include "ComponentMaterial.h"
+#include "AABB.h"
 #include <iostream>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -141,38 +142,41 @@ void GameObject::AddComponent(Component* component)
     components.push_back(component);
 }
 
+
 void GameObject::UpdateAABB()
 {
     globalAABB.Reset();
 
-    if (!active)
-        return;
-
-    ComponentMesh* mesh = GetComponent<ComponentMesh>();
     ComponentTransform* transform = GetComponent<ComponentTransform>();
+    ComponentMesh* mesh = GetComponent<ComponentMesh>();
 
     if (mesh && transform)
     {
-        // Obtener AABB local del mesh
-        AABB localAABB = mesh->CalculateLocalAABB();
+        // Obtener AABB local del mesh (ya calculado)
+        AABB localAABB = mesh->GetLocalAABB();
 
         if (localAABB.IsValid())
         {
-            // Transformar AABB local a espacio global
-            glm::mat4 globalMatrix = transform->GetGlobalMatrix();
-            globalAABB = localAABB.Transform(globalMatrix);
+            // Transformar el AABB local a espacio world
+            glm::mat4 worldMatrix = transform->GetGlobalMatrix();
+            AABB worldAABB = localAABB.Transform(worldMatrix);
+
+            // Expandir nuestro AABB con el AABB transformado
+            globalAABB.Encapsulate(worldAABB);
         }
     }
 
-    // Actualizar AABBs de los hijos y encapsularlos
+    // Actualizar recursivamente todos los hijos
     for (GameObject* child : children)
     {
-        if (child && child->IsActive())
+        if (child)
         {
             child->UpdateAABB();
-            if (child->GetAABB().IsValid())
+
+            const AABB& childAABB = child->GetAABB();
+            if (childAABB.IsValid())
             {
-                globalAABB.Encapsulate(child->GetAABB());
+                globalAABB.Encapsulate(childAABB);
             }
         }
     }
@@ -185,7 +189,7 @@ bool GameObject::IntersectRayTriangles(const Ray& rayLocal, ComponentMesh* mesh,
         return false;
 
     // CORREGIDO: Ahora usa MeshVertex en lugar de float[]
-    const std::vector<MeshVertex>& vertices = mesh->GetVertices();
+    const std::vector<MeshVertex>& vertices = mesh->GetMeshVertices();
     const std::vector<unsigned int>& indices = mesh->GetIndices();
 
     if (vertices.empty() || indices.empty())
@@ -253,50 +257,110 @@ bool GameObject::IntersectRayTriangles(const Ray& rayLocal, ComponentMesh* mesh,
     return anyHit;
 }
 
-bool GameObject::IntersectRay(const Ray& ray, RayHit& hit)
+bool GameObject::IntersectRay(const Ray& ray, RayHit& outHit)
 {
-    if (!active)
+    // 1. TEST CONTRA AABB
+    glm::vec3 invDir = 1.0f / ray.direction;
+    glm::vec3 t0 = (globalAABB.min - ray.origin) * invDir;
+    glm::vec3 t1 = (globalAABB.max - ray.origin) * invDir;
+
+    glm::vec3 tmin = glm::min(t0, t1);
+    glm::vec3 tmax = glm::max(t0, t1);
+
+    float tNear = glm::max(glm::max(tmin.x, tmin.y), tmin.z);
+    float tFar = glm::min(glm::min(tmax.x, tmax.y), tmax.z);
+
+    // Si no intersecta el AABB, salir
+    if (tNear > tFar || tFar < 0.0f)
         return false;
 
-    // Test rápido contra AABB global
-    float tMin, tMax;
-    if (!globalAABB.IntersectRay(ray, tMin, tMax))
-        return false;
-
+    // 2. SI INTERSECTA AABB, TEST CONTRA TRIÁNGULOS
     ComponentMesh* mesh = GetComponent<ComponentMesh>();
-    ComponentTransform* transform = GetComponent<ComponentTransform>();
-
-    if (!mesh || !transform)
+    if (!mesh)
         return false;
 
-    // Transformar rayo de espacio global a espacio local del objeto
-    glm::mat4 invTransform = glm::inverse(transform->GetGlobalMatrix());
-    glm::vec3 localOrigin = glm::vec3(invTransform * glm::vec4(ray.origin, 1.0f));
-    glm::vec3 localDir = glm::vec3(invTransform * glm::vec4(ray.direction, 0.0f));
-    Ray rayLocal(localOrigin, localDir);
+    ComponentTransform* transform = GetComponent<ComponentTransform>();
+    if (!transform)
+        return false;
 
-    // Test de intersección contra triángulos
-    float closestDist;
-    glm::vec3 localHitPoint;
+    // 3. TRANSFORMAR RAY A ESPACIO LOCAL
+    glm::mat4 worldMatrix = transform->GetGlobalMatrix();
+    glm::mat4 invWorld = glm::inverse(worldMatrix);
 
-    if (IntersectRayTriangles(rayLocal, mesh, closestDist, localHitPoint))
+    glm::vec3 localOrigin = glm::vec3(invWorld * glm::vec4(ray.origin, 1.0f));
+    glm::vec3 localDirection = glm::vec3(invWorld * glm::vec4(ray.direction, 0.0f));
+    Ray localRay(localOrigin, localDirection);
+
+    // 4. OBTENER DATOS DEL MESH
+    const std::vector<float>& vertices = mesh->GetVertices();
+    const std::vector<unsigned int>& indices = mesh->GetIndices();
+
+    if (vertices.empty() || indices.empty())
+        return false;
+
+    // 5. TEST CONTRA CADA TRIÁNGULO
+    // Formato: [x, y, z, nx, ny, nz, u, v] = 8 floats por vértice
+    const size_t VERTEX_STRIDE = 8;
+
+    float closestDistance = FLT_MAX;
+    bool foundHit = false;
+
+    for (size_t i = 0; i < indices.size(); i += 3)
     {
-        // Convertir punto de impacto de vuelta a espacio global
-        glm::mat4 globalMatrix = transform->GetGlobalMatrix();
-        glm::vec3 worldHitPoint = glm::vec3(globalMatrix * glm::vec4(localHitPoint, 1.0f));
+        unsigned int idx0 = indices[i];
+        unsigned int idx1 = indices[i + 1];
+        unsigned int idx2 = indices[i + 2];
 
-        // Calcular distancia real en espacio global
-        float worldDist = glm::distance(ray.origin, worldHitPoint);
+        // Obtener posiciones de los vértices del triángulo
+        size_t offset0 = idx0 * VERTEX_STRIDE;
+        size_t offset1 = idx1 * VERTEX_STRIDE;
+        size_t offset2 = idx2 * VERTEX_STRIDE;
 
-        // Actualizar hit si es más cercano que el anterior
-        if (worldDist < hit.distance)
+        glm::vec3 v0(vertices[offset0], vertices[offset0 + 1], vertices[offset0 + 2]);
+        glm::vec3 v1(vertices[offset1], vertices[offset1 + 1], vertices[offset1 + 2]);
+        glm::vec3 v2(vertices[offset2], vertices[offset2 + 1], vertices[offset2 + 2]);
+
+        // ALGORITMO MÖLLER-TRUMBORE para intersección ray-triángulo
+        glm::vec3 edge1 = v1 - v0;
+        glm::vec3 edge2 = v2 - v0;
+        glm::vec3 h = glm::cross(localRay.direction, edge2);
+        float a = glm::dot(edge1, h);
+
+        // Rayo paralelo al triángulo
+        if (a > -0.00001f && a < 0.00001f)
+            continue;
+
+        float f = 1.0f / a;
+        glm::vec3 s = localRay.origin - v0;
+        float u = f * glm::dot(s, h);
+
+        if (u < 0.0f || u > 1.0f)
+            continue;
+
+        glm::vec3 q = glm::cross(s, edge1);
+        float v = f * glm::dot(localRay.direction, q);
+
+        if (v < 0.0f || u + v > 1.0f)
+            continue;
+
+        // Calcular distancia
+        float t = f * glm::dot(edge2, q);
+
+        if (t > 0.00001f && t < closestDistance)
         {
-            hit.hit = true;
-            hit.distance = worldDist;
-            hit.point = worldHitPoint;
-            hit.gameObject = this;
-            return true;
+            closestDistance = t;
+            foundHit = true;
         }
+    }
+
+    // 6. LLENAR RESULTADO
+    if (foundHit)
+    {
+        outHit.hit = true;
+        outHit.distance = closestDistance;
+        outHit.point = localRay.GetPoint(closestDistance);
+        outHit.gameObject = this;
+        return true;
     }
 
     return false;
