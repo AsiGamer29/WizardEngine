@@ -22,7 +22,6 @@ public:
     bool CleanUp() override;
 
     void ProcessEvent(const SDL_Event& event);
-    void HandleMousePicking();
     void HandleGizmo();
 
     // API for engine modules to report messages to the editor console

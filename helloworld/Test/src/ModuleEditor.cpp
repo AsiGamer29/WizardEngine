@@ -442,16 +442,16 @@ bool ModuleEditor::Update()
         ImGui::End();
     }
 
-    // ===== CALCULAR DIMENSIONES DEL VIEWPORT 3D =====
+    // ===== CALCULAR DIMENSIONES ESTILO UNITY =====
     ImGuiViewport* mainViewport = ImGui::GetMainViewport();
 
-    float hierWidth = 260.0f;
-    float inspWidth = 310.0f;
-    float consoleHeight = 200.0f;  // Altura de la consola en la parte inferior
+    float hierWidth = 260.0f;      // Ancho de Hierarchy (izquierda)
+    float inspWidth = 320.0f;      // Ancho de Inspector (derecha)
+    float consoleHeight = 200.0f;  // Altura de la consola (abajo)
 
-    // El viewport 3D ocupa desde arriba hasta donde empieza la consola
+    // El viewport 3D está en el centro, entre hierarchy e inspector
+    float viewportWidth = mainViewport->WorkSize.x - hierWidth - inspWidth;
     float viewportHeight = mainViewport->WorkSize.y - consoleHeight;
-    float viewportWidth = mainViewport->WorkSize.x;
 
     // ===== REDIMENSIONAR FRAMEBUFFER SI ES NECESARIO =====
     int newFBWidth = (int)viewportWidth;
@@ -485,9 +485,8 @@ bool ModuleEditor::Update()
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    // ===== MOSTRAR TEXTURA DEL FRAMEBUFFER EN IMGUI (Ocupa toda la ventana excepto consola) =====
-    // Calcular posición y tamaño del viewport
-    ImVec2 viewportWindowPos = ImVec2(mainViewport->WorkPos.x, mainViewport->WorkPos.y);
+    // ===== MOSTRAR TEXTURA DEL FRAMEBUFFER EN IMGUI (Centro, entre Hierarchy e Inspector) =====
+    ImVec2 viewportWindowPos = ImVec2(mainViewport->WorkPos.x + hierWidth, mainViewport->WorkPos.y);
     ImVec2 viewportWindowSize = ImVec2(viewportWidth, viewportHeight);
 
     ImGui::SetNextWindowPos(viewportWindowPos, ImGuiCond_Always);
@@ -580,17 +579,16 @@ bool ModuleEditor::Update()
     ImGui::End();
     ImGui::PopStyleVar();
 
-    // ===== MOUSE PICKING (ya no se necesita aquí, se hace dentro del viewport) =====
-    // HandleMousePicking();
-
-    // Hierarchy window
+    // Hierarchy window - OCUPA TODA LA ALTURA IZQUIERDA
     if (show_hierarchy_window)
     {
         ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImVec2 hierPos = ImVec2(viewport->WorkPos.x + 10.0f, viewport->WorkPos.y + 10.0f);
+        ImVec2 hierPos = ImVec2(viewport->WorkPos.x, viewport->WorkPos.y);
+        ImVec2 hierSize = ImVec2(hierWidth, viewport->WorkSize.y);
+
         ImGui::SetNextWindowPos(hierPos, ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(250, 400), ImGuiCond_FirstUseEver);
-        ImGuiWindowFlags hierFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
+        ImGui::SetNextWindowSize(hierSize, ImGuiCond_Always);
+        ImGuiWindowFlags hierFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse;
 
         ImGui::Begin("Hierarchy", NULL, hierFlags);
 
@@ -632,16 +630,16 @@ bool ModuleEditor::Update()
         ImGui::End();
     }
 
-    // Inspector window
+    // Inspector window - OCUPA TODA LA ALTURA DERECHA
     if (show_inspector_window)
     {
         ImGuiViewport* viewport = ImGui::GetMainViewport();
-        float inspectorW = 300.0f;
-        float inspectorH = 500.0f;
-        ImVec2 inspPos = ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - inspectorW - 10.0f, viewport->WorkPos.y + 10.0f);
+        ImVec2 inspPos = ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - inspWidth, viewport->WorkPos.y);
+        ImVec2 inspSize = ImVec2(inspWidth, viewport->WorkSize.y);
+
         ImGui::SetNextWindowPos(inspPos, ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(inspectorW, inspectorH), ImGuiCond_FirstUseEver);
-        ImGuiWindowFlags inspFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
+        ImGui::SetNextWindowSize(inspSize, ImGuiCond_Always);
+        ImGuiWindowFlags inspFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse;
 
         ImGui::Begin("Inspector", &show_inspector_window, inspFlags);
 
@@ -831,19 +829,20 @@ bool ModuleEditor::Update()
         }
     }
 
-    // Console window
+    // Console window - PARTE INFERIOR, ENTRE HIERARCHY E INSPECTOR
     if (show_console_window)
     {
-        // Calcular posición de la consola (parte inferior de la ventana)
         ImGuiViewport* viewport = ImGui::GetMainViewport();
-        float consoleHeight = 200.0f;
-        ImVec2 consolePos = ImVec2(viewport->WorkPos.x, viewport->WorkPos.y + viewport->WorkSize.y - consoleHeight);
-        ImVec2 consoleSize = ImVec2(viewport->WorkSize.x, consoleHeight);
+
+        // La consola empieza después de hierarchy y termina antes de inspector
+        ImVec2 consolePos = ImVec2(viewport->WorkPos.x + hierWidth,
+            viewport->WorkPos.y + viewport->WorkSize.y - consoleHeight);
+        ImVec2 consoleSize = ImVec2(viewportWidth, consoleHeight);
 
         ImGui::SetNextWindowPos(consolePos, ImGuiCond_Always);
         ImGui::SetNextWindowSize(consoleSize, ImGuiCond_Always);
 
-        ImGuiWindowFlags consoleFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+        ImGuiWindowFlags consoleFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse;
 
         ImGui::Begin("Console", &show_console_window, consoleFlags);
 
@@ -1138,13 +1137,23 @@ void ModuleEditor::HandleGizmo()
         : ImGuizmo::WORLD;
 
     float* snap = nullptr;
+    float snapArray[3] = { 0.0f, 0.0f, 0.0f };
     if (useSnap)
     {
         switch (currentGizmoOperation)
         {
-        case GizmoOperation::TRANSLATE: snap = &snapValues[0]; break;
-        case GizmoOperation::ROTATE:    snap = &snapValues[1]; break;
-        case GizmoOperation::SCALE:     snap = &snapValues[2]; break;
+        case GizmoOperation::TRANSLATE:
+            snapArray[0] = snapArray[1] = snapArray[2] = snapValues[0];
+            snap = snapArray;
+            break;
+        case GizmoOperation::ROTATE:
+            snapArray[0] = snapArray[1] = snapArray[2] = snapValues[1];
+            snap = snapArray;
+            break;
+        case GizmoOperation::SCALE:
+            snapArray[0] = snapArray[1] = snapArray[2] = snapValues[2];
+            snap = snapArray;
+            break;
         }
     }
 
