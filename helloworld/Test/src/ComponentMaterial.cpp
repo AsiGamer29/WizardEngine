@@ -1,20 +1,11 @@
 #include "ComponentMaterial.h"
-#include "GameObject.h"
-#include "Texture.h" // Tu clase Texture existente
-#include <IL/il.h>
-#include <IL/ilu.h>
+#include "Texture.h"
+#include "imgui.h"
 #include <iostream>
 
 ComponentMaterial::ComponentMaterial(GameObject* owner)
-    : Component(owner, ComponentType::MATERIAL),
-    textureID(0), width(0), height(0), channels(0), overrideTextureID(0), overrideTextureOwned(false)
+    : Component(owner, ComponentType::MATERIAL), textureID(0), width(0), height(0), channels(0)
 {
-    // Crear textura checkerboard por defecto
-    textureID = Texture::CreateCheckerboardTexture(512, 512, 32);
-    texturePath = "checkerboard_default";
-    width = 512;
-    height = 512;
-    channels = 3;
 }
 
 ComponentMaterial::~ComponentMaterial()
@@ -24,108 +15,64 @@ ComponentMaterial::~ComponentMaterial()
 
 void ComponentMaterial::LoadTexture(const char* path)
 {
-    if (!path || strlen(path) == 0)
-    {
-        std::cerr << "[ComponentMaterial] Invalid texture path" << std::endl;
-        return;
-    }
-
-    // Limpiar textura anterior
-    if (textureID != 0)
-    {
-        glDeleteTextures(1, &textureID);
-        textureID = 0;
-    }
-
-    // Detectar formato
-    std::string pathStr(path);
-    std::string ext = pathStr.substr(pathStr.find_last_of('.') + 1);
-    for (auto& c : ext) c = tolower(c);
-
-    // Cargar según formato
-    if (ext == "dds")
-    {
-        textureID = Texture::LoadDDSTexture(path);
-    }
-    else
-    {
-        // Usar DevIL para otros formatos (jpg, png, tga, bmp, etc.)
-        ILuint imgID;
-        ilGenImages(1, &imgID);
-        ilBindImage(imgID);
-
-        if (!ilLoadImage(path))
-        {
-            std::cerr << "[ComponentMaterial] Failed to load: " << path << std::endl;
-            ilDeleteImages(1, &imgID);
-
-            // Usar checkerboard como fallback
-            textureID = Texture::CreateCheckerboardTexture(512, 512, 32);
-            texturePath = "checkerboard_fallback";
-            width = 512;
-            height = 512;
-            channels = 3;
-            return;
-        }
-
-        // Convertir a RGBA
-        ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-
-        // Obtener información de la imagen
-        width = ilGetInteger(IL_IMAGE_WIDTH);
-        height = ilGetInteger(IL_IMAGE_HEIGHT);
-        channels = ilGetInteger(IL_IMAGE_CHANNELS);
-
-        // Crear textura OpenGL
-        glGenTextures(1, &textureID);
-        glBindTexture(GL_TEXTURE_2D, textureID);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-            width, height,
-            0, GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
-        glGenerateMipmap(GL_TEXTURE_2D);
-
-        // Parámetros de textura
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-        ilDeleteImages(1, &imgID);
-        std::cout << "[ComponentMaterial] Loaded texture: " << path
-            << " (" << width << "x" << height << ")" << std::endl;
-    }
+    CleanUp();
 
     texturePath = path;
+
+    TextureData texData = Texture::LoadTextureWithInfo(path);
+
+    textureID = texData.id;
+    width = texData.width;
+    height = texData.height;
+    channels = texData.channels;
+
+    if (channels == 4)
+    {
+        alphaMode = AlphaMode::ALPHA_TEST;
+        alphaCutoff = 0.5f;
+        std::cout << "[Material] Auto-enabled ALPHA_TEST" << std::endl;
+    }
+    else
+    {
+        alphaMode = AlphaMode::OPAQUE;
+        std::cout << "[Material] Opaque texture" << std::endl;
+    }
 }
 
-void ComponentMaterial::SetTexture(GLuint texID, const char* path)
+void ComponentMaterial::SetTexture(GLuint texID, const char* path, int texChannels)
 {
     textureID = texID;
-    if (path && strlen(path) > 0)
+    if (path && path[0] != '\0')
         texturePath = path;
-    else
-        texturePath = "external_texture";
+
+    if (texChannels > 0)
+    {
+        channels = texChannels;
+
+        if (channels == 4)
+        {
+            alphaMode = AlphaMode::ALPHA_TEST;
+            alphaCutoff = 0.5f;
+        }
+        else
+        {
+            alphaMode = AlphaMode::OPAQUE;
+        }
+    }
 }
 
 void ComponentMaterial::SetOverrideTexture(GLuint texID, bool takeOwnership)
 {
-    // Si ya hay una override, liberarla si la poseemos
-    if (overrideTextureID != 0 && overrideTextureOwned)
-    {
-        if (glIsTexture(overrideTextureID))
-            glDeleteTextures(1, &overrideTextureID);
-    }
-
+    ClearOverrideTexture();
     overrideTextureID = texID;
     overrideTextureOwned = takeOwnership;
 }
 
 void ComponentMaterial::ClearOverrideTexture()
 {
-    if (overrideTextureID != 0 && overrideTextureOwned)
+    if (overrideTextureOwned && overrideTextureID != 0)
     {
-        if (glIsTexture(overrideTextureID))
-            glDeleteTextures(1, &overrideTextureID);
+        glDeleteTextures(1, &overrideTextureID);
     }
     overrideTextureID = 0;
     overrideTextureOwned = false;
@@ -133,42 +80,102 @@ void ComponentMaterial::ClearOverrideTexture()
 
 void ComponentMaterial::Bind()
 {
-    GLuint toBind = textureID;
-    if (overrideTextureID != 0)
-        toBind = overrideTextureID;
+    GLuint texToBind = (overrideTextureID != 0) ? overrideTextureID : textureID;
+    glBindTexture(GL_TEXTURE_2D, texToBind);
 
-    if (toBind != 0)
+    if (alphaMode == AlphaMode::ALPHA_TEST)
     {
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, toBind);
+        glEnable(GL_ALPHA_TEST);
+        glAlphaFunc(GL_GREATER, alphaCutoff);
+    }
+    else
+    {
+        glDisable(GL_ALPHA_TEST);
+    }
+
+    if (alphaMode == AlphaMode::ALPHA_BLEND)
+    {
+        glEnable(GL_BLEND);
+        SetupBlendMode();
+    }
+    else
+    {
+        glDisable(GL_BLEND);
     }
 }
 
 void ComponentMaterial::Unbind()
 {
     glBindTexture(GL_TEXTURE_2D, 0);
+    glDisable(GL_ALPHA_TEST);
+    glDisable(GL_BLEND);
+}
+
+void ComponentMaterial::SetupBlendMode()
+{
+    switch (blendMode)
+    {
+    case BlendMode::STANDARD:
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        break;
+    case BlendMode::ADDITIVE:
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        break;
+    case BlendMode::MULTIPLY:
+        glBlendFunc(GL_DST_COLOR, GL_ZERO);
+        break;
+    case BlendMode::SCREEN:
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_COLOR);
+        break;
+    case BlendMode::PREMULTIPLIED:
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        break;
+    }
 }
 
 void ComponentMaterial::OnEditor()
 {
-    // TODO: Implementar con ImGui cuando hagas el inspector
+    if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Text("Texture: %s", texturePath.c_str());
+        ImGui::Text("Size: %dx%d", width, height);
+        ImGui::Text("Channels: %d", channels);
+
+        ImGui::Separator();
+
+        const char* alphaModeNames[] = { "Opaque", "Alpha Test", "Alpha Blend" };
+        int currentMode = (int)alphaMode;
+        if (ImGui::Combo("Alpha Mode", &currentMode, alphaModeNames, 3))
+        {
+            alphaMode = (AlphaMode)currentMode;
+        }
+
+        if (alphaMode == AlphaMode::ALPHA_TEST)
+        {
+            ImGui::SliderFloat("Alpha Cutoff", &alphaCutoff, 0.0f, 1.0f);
+        }
+
+        if (alphaMode == AlphaMode::ALPHA_BLEND)
+        {
+            const char* blendModeNames[] = { "Standard", "Additive", "Multiply", "Screen", "Premultiplied" };
+            int currentBlend = (int)blendMode;
+            if (ImGui::Combo("Blend Mode", &currentBlend, blendModeNames, 5))
+            {
+                blendMode = (BlendMode)currentBlend;
+            }
+
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f), "Warning: Needs depth sorting!");
+        }
+    }
 }
 
 void ComponentMaterial::CleanUp()
 {
-    // Limpiar override primero
-    if (overrideTextureID != 0 && overrideTextureOwned)
-    {
-        if (glIsTexture(overrideTextureID))
-            glDeleteTextures(1, &overrideTextureID);
-        overrideTextureID = 0;
-        overrideTextureOwned = false;
-    }
-
     if (textureID != 0)
     {
-        if (glIsTexture(textureID))
-            glDeleteTextures(1, &textureID);
+        glDeleteTextures(1, &textureID);
         textureID = 0;
     }
+
+    ClearOverrideTexture();
 }

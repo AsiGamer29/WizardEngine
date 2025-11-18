@@ -2,6 +2,7 @@
 #include "Application.h"
 #include "Model.h"
 #include "Texture.h"
+#include "RenderSystem.h"
 #include "GeometryGenerator.h"
 #include "ModuleScene.h"
 #include "GameObject.h"
@@ -653,6 +654,23 @@ void OpenGL::ApplyTextureToGameObjects(GameObject* go, GLuint texID, const char*
     {
         std::cerr << "UNKNOWN EXCEPTION in ApplyTextureToGameObjects" << std::endl;
     }
+}
+
+bool OpenGL::PostUpdate()
+{
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    Application& app = Application::GetInstance();
+    auto camera = app.GetCamera();
+    auto scene = app.GetModuleScene();
+
+    if (camera && scene)
+    {
+        glm::vec3 cameraPos = camera->getPosition();
+        RenderSystem::RenderScene(scene->GetAllGameObjects(), cameraPos);
+    }
+
+    return true;
 }
 
 bool OpenGL::CleanUp()

@@ -1208,9 +1208,3 @@ void ModuleEditor::HandleGizmo()
         app.moduleScene->UpdateAllAABBs();
     }
 }
-
-void ModuleEditor::HandleMousePicking()
-{
-    // Esta función ya no se usa - el mouse picking se maneja directamente
-    // dentro de la ventana del viewport usando ImGui::IsItemClicked()
-}

@@ -29,6 +29,9 @@ public:
     bool IsRunning() const { return isRunning; }
     void SetRunning(bool running) { isRunning = running; }
 
+    std::shared_ptr<Camera> GetCamera() const { return camera; }
+    std::shared_ptr<ModuleScene> GetModuleScene() const { return moduleScene; }
+
 private:
     Application();
     ~Application() = default;

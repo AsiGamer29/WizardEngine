@@ -39,6 +39,14 @@ unsigned int Texture::CreateCheckerboardTexture(int width, int height, int cellS
 
 unsigned int Texture::LoadTexture(const char* path)
 {
+    TextureData data = LoadTextureWithInfo(path);
+    return data.id;
+}
+
+TextureData Texture::LoadTextureWithInfo(const char* path)
+{
+    TextureData result = { 0, 0, 0, 0 };
+
     ILuint imgID;
     ilGenImages(1, &imgID);
     ilBindImage(imgID);
@@ -47,17 +55,26 @@ unsigned int Texture::LoadTexture(const char* path)
     {
         std::cerr << "[Texture] Failed to load: " << path << " -> using fallback checkerboard" << std::endl;
         ilDeleteImages(1, &imgID);
-        return CreateCheckerboardTexture(512, 512, 32);
+        result.id = CreateCheckerboardTexture(512, 512, 32);
+        result.width = 512;
+        result.height = 512;
+        result.channels = 3;
+        return result;
     }
 
+    int originalChannels = ilGetInteger(IL_IMAGE_CHANNELS);
+
     ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
+
+    result.width = ilGetInteger(IL_IMAGE_WIDTH);
+    result.height = ilGetInteger(IL_IMAGE_HEIGHT);
+    result.channels = originalChannels;
 
     GLuint texID;
     glGenTextures(1, &texID);
     glBindTexture(GL_TEXTURE_2D, texID);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-        ilGetInteger(IL_IMAGE_WIDTH),
-        ilGetInteger(IL_IMAGE_HEIGHT),
+        result.width, result.height,
         0, GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
     glGenerateMipmap(GL_TEXTURE_2D);
 
@@ -66,9 +83,14 @@ unsigned int Texture::LoadTexture(const char* path)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
+    result.id = texID;
+
     ilDeleteImages(1, &imgID);
-    std::cout << "[Texture] Loaded: " << path << std::endl;
-    return texID;
+    std::cout << "[Texture] Loaded: " << path
+        << " (" << result.width << "x" << result.height
+        << ", " << result.channels << " channels)" << std::endl;
+
+    return result;
 }
 
 unsigned int Texture::LoadDDSTexture(const char* path)

@@ -3,6 +3,22 @@
 #include <string>
 #include <glad/glad.h>
 
+enum class AlphaMode
+{
+    OPAQUE,
+    ALPHA_TEST,
+    ALPHA_BLEND
+};
+
+enum class BlendMode
+{
+    STANDARD,
+    ADDITIVE,
+    MULTIPLY,
+    SCREEN,
+    PREMULTIPLIED
+};
+
 class ComponentMaterial : public Component
 {
 private:
@@ -13,21 +29,20 @@ private:
     int height;
     int channels;
 
-    // Optional override texture used only for rendering (not replacing original texture)
     GLuint overrideTextureID = 0;
     bool overrideTextureOwned = false;
+
+    AlphaMode alphaMode = AlphaMode::OPAQUE;
+    float alphaCutoff = 0.5f;
+    BlendMode blendMode = BlendMode::STANDARD;
 
 public:
     ComponentMaterial(GameObject* owner);
     ~ComponentMaterial();
 
-    // Carga desde archivo (usando DevIL como en tu Texture.cpp)
     void LoadTexture(const char* path);
+    void SetTexture(GLuint texID, const char* path = "", int texChannels = 0);
 
-    // Asigna una textura ya cargada (para usar con tu sistema actual)
-    void SetTexture(GLuint texID, const char* path = "");
-
-    // Override: asigna una textura temporal para usar en Bind() sin perder la referencia original
     void SetOverrideTexture(GLuint texID, bool takeOwnership = false);
     void ClearOverrideTexture();
     GLuint GetOverrideTextureID() const { return overrideTextureID; }
@@ -41,6 +56,19 @@ public:
     int GetWidth() const { return width; }
     int GetHeight() const { return height; }
 
+    AlphaMode GetAlphaMode() const { return alphaMode; }
+    void SetAlphaMode(AlphaMode mode) { alphaMode = mode; }
+
+    float GetAlphaCutoff() const { return alphaCutoff; }
+    void SetAlphaCutoff(float cutoff) { alphaCutoff = cutoff; }
+
+    BlendMode GetBlendMode() const { return blendMode; }
+    void SetBlendMode(BlendMode mode) { blendMode = mode; }
+
+    bool NeedsBlending() const { return alphaMode == AlphaMode::ALPHA_BLEND; }
+    bool IsOpaque() const { return alphaMode == AlphaMode::OPAQUE; }
+
 private:
     void CleanUp();
+    void SetupBlendMode();
 };
