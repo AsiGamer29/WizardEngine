@@ -53,7 +53,7 @@ TextureData Texture::LoadTextureWithInfo(const char* path)
 
     if (!ilLoadImage(path))
     {
-        std::cerr << "[Texture] Failed to load: " << path << " -> using fallback checkerboard" << std::endl;
+        std::cerr << "[Texture] Failed to load: " << path << std::endl;
         ilDeleteImages(1, &imgID);
         result.id = CreateCheckerboardTexture(512, 512, 32);
         result.width = 512;
@@ -73,6 +73,7 @@ TextureData Texture::LoadTextureWithInfo(const char* path)
     GLuint texID;
     glGenTextures(1, &texID);
     glBindTexture(GL_TEXTURE_2D, texID);
+
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
         result.width, result.height,
         0, GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
