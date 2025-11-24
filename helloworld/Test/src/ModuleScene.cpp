@@ -28,11 +28,23 @@ bool ModuleScene::Start()
 {
     std::cout << "[ModuleScene] Initializing..." << std::endl;
 
-    // Crear GameObject raíz (root)
+    // Crear Scene Root CON Transform
     root = new GameObject("Scene Root");
+
+    // CRITICO: Darle Transform al root
+    ComponentTransform* rootTransform = static_cast<ComponentTransform*>(
+        root->CreateComponent(ComponentType::TRANSFORM)
+        );
+
+    if (rootTransform) {
+        rootTransform->SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
+        rootTransform->SetScale(glm::vec3(1.0f, 1.0f, 1.0f));
+        rootTransform->SetRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+    }
+
     allGameObjects.push_back(root);
 
-    std::cout << "[ModuleScene] Root GameObject created" << std::endl;
+    std::cout << "[ModuleScene] Root GameObject created with Transform" << std::endl;
 
     return true;
 }
@@ -88,26 +100,27 @@ bool ModuleScene::CleanUp()
 
 GameObject* ModuleScene::CreateGameObject(const char* name, GameObject* parent)
 {
-    GameObject* newGO = new GameObject(name);
+    GameObject* go = new GameObject(name);
 
-    // Si no se especifica padre, usar el root
-    if (parent == nullptr)
-        parent = root;
+    // CRITICO: Crear Transform automaticamente
+    ComponentTransform* transform = static_cast<ComponentTransform*>(
+        go->CreateComponent(ComponentType::TRANSFORM)
+        );
 
-    // Añadir a la jerarquía
-    if (parent)
-    {
-        parent->AddChild(newGO);
+    if (transform) {
+        transform->SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
+        transform->SetScale(glm::vec3(1.0f, 1.0f, 1.0f));
+        transform->SetRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
     }
 
-    // Añadir a la lista global
-    allGameObjects.push_back(newGO);
+    // Establecer el padre si existe
+    if (parent) {
+        go->SetParent(parent);
+    }
 
-    std::cout << "[ModuleScene] Created GameObject: " << name << std::endl;
-
-    return newGO;
+    allGameObjects.push_back(go);
+    return go;
 }
-
 void ModuleScene::DestroyGameObject(GameObject* gameObject)
 {
     if (!gameObject || gameObject == root)
@@ -175,10 +188,21 @@ void ModuleScene::LoadModel(const char* path)
 {
     std::cout << "[ModuleScene] Loading model: " << path << std::endl;
 
-    // NO borrar nada previamente: cada modelo se añade al root
+    // Asegurarse de que existe el root (por si acaso)
     if (!root)
     {
         root = new GameObject("Scene Root");
+
+        ComponentTransform* rootTransform = static_cast<ComponentTransform*>(
+            root->CreateComponent(ComponentType::TRANSFORM)
+            );
+
+        if (rootTransform) {
+            rootTransform->SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
+            rootTransform->SetScale(glm::vec3(1.0f, 1.0f, 1.0f));
+            rootTransform->SetRotation(glm::quat(0.0f, 0.0f, 0.0f, 0.0f));
+        }
+
         allGameObjects.push_back(root);
     }
 
@@ -206,8 +230,6 @@ void ModuleScene::LoadModel(const char* path)
 
     std::cout << "[ModuleScene] Model hierarchy loaded" << std::endl;
 
-    // IMPORTANTE: no destruir el importer hasta que termines de usar la escena
-    // (o usar Assimp::Importer como variable local, no puntero)
     delete importer;
 }
 

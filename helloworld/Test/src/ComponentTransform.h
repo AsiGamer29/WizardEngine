@@ -10,7 +10,10 @@ private:
     glm::quat rotation;
     glm::vec3 scale;
 
-    mutable bool matrixNeedsUpdate;
+    mutable glm::mat4 localMatrix;
+    mutable glm::mat4 globalMatrix;
+    mutable bool localMatrixDirty;
+    mutable bool globalMatrixDirty;
 
 public:
     ComponentTransform(GameObject* owner);
@@ -31,5 +34,13 @@ public:
     glm::quat GetGlobalRotation() const;
     glm::vec3 GetGlobalScale() const;
 
+    void MarkDirty();
+    void MarkGlobalDirty();
+
     void OnEditor() override;
+
+private:
+    void UpdateLocalMatrix() const;
+    void UpdateGlobalMatrix() const;
+    void PropagateGlobalDirtyToChildren();
 };

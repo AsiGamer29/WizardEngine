@@ -372,9 +372,9 @@ bool OpenGL::Start()
             ComponentTransform* transform = bakerHouse->GetComponent<ComponentTransform>();
             if (transform)
             {
-                transform->SetScale(glm::vec3(0.01f));
+                transform->SetScale(glm::vec3(1.0f));
 
-                glm::quat correction = glm::angleAxis(glm::radians(90.0f), glm::vec3(1, 0, 0));
+                glm::quat correction = glm::angleAxis(glm::radians(0.0f), glm::vec3(1, 0, 0));
                 transform->SetRotation(correction);
 
             }

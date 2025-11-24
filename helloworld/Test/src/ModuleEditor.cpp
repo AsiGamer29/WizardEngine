@@ -60,36 +60,35 @@ static void CreateGeometryGameObject(const std::string& geometryType) {
     auto& app = Application::GetInstance();
 
     if (!app.moduleScene) {
-        std::cerr << "ModuleScene no está inicializado" << std::endl;
+        std::cerr << "ModuleScene no esta inicializado" << std::endl;
         return;
     }
 
     static int geometryCounter = 0;
     std::string objectName = geometryType + "_" + std::to_string(++geometryCounter);
 
-    GameObject* gameObject = app.moduleScene->CreateGameObject(objectName.c_str());
+    // CreateGameObject ya crea el Transform automaticamente
+    GameObject* gameObject = app.moduleScene->CreateGameObject(objectName.c_str(), app.moduleScene->GetRoot());
 
     if (!gameObject) {
         std::cerr << "Error al crear GameObject" << std::endl;
         return;
     }
 
-    ComponentTransform* transform = static_cast<ComponentTransform*>(
-        gameObject->GetComponent(ComponentType::TRANSFORM)
-        );
+    // El Transform ya existe, solo lo obtenemos (NO lo creamos de nuevo)
+    ComponentTransform* transform = gameObject->GetComponent<ComponentTransform>();
 
     if (!transform) {
-        transform = static_cast<ComponentTransform*>(
-            gameObject->CreateComponent(ComponentType::TRANSFORM)
-            );
+        ModuleEditor::PushEngineLog("CRITICAL ERROR: GameObject created without Transform!");
+        return;
     }
 
-    if (transform) {
-        transform->SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
-        transform->SetScale(glm::vec3(1.0f, 1.0f, 1.0f));
-        transform->SetRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
-    }
+    // Ya tiene valores por defecto, pero los podemos ajustar si queremos
+    transform->SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
+    transform->SetScale(glm::vec3(1.0f, 1.0f, 1.0f));
+    transform->SetRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
 
+    // CREAR COMPONENTE MESH
     ComponentMesh* meshComp = static_cast<ComponentMesh*>(
         gameObject->CreateComponent(ComponentType::MESH)
         );
@@ -114,11 +113,28 @@ static void CreateGeometryGameObject(const std::string& geometryType) {
         }
 
         meshComp->LoadFromGeometry(&geom);
+        ModuleEditor::PushEnginePrintf("Mesh loaded for: %s", objectName.c_str());
+    }
+    else {
+        ModuleEditor::PushEngineLog("ERROR: Failed to create Mesh component");
     }
 
-    ComponentMaterial* materialComp = (ComponentMaterial*)gameObject->CreateComponent(ComponentType::MATERIAL);
+    // CREAR COMPONENTE MATERIAL
+    ComponentMaterial* materialComp = static_cast<ComponentMaterial*>(
+        gameObject->CreateComponent(ComponentType::MATERIAL)
+        );
 
-    ModuleEditor::PushEnginePrintf("GameObject created: %s", objectName.c_str());
+    if (materialComp) {
+        GLuint checkerTex = Texture::CreateCheckerboardTexture(512, 512, 32);
+        materialComp->SetTexture(checkerTex, "checkerboard_default", 3);
+        ModuleEditor::PushEnginePrintf("GameObject created: %s (with checkerboard texture)", objectName.c_str());
+    }
+    else {
+        ModuleEditor::PushEnginePrintf("GameObject created: %s (WARNING: no material)", objectName.c_str());
+    }
+
+    // Actualizar AABBs
+    app.moduleScene->UpdateAllAABBs();
 }
 
 // ============================================
@@ -128,33 +144,27 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
 {
     if (!go) return;
 
-    // Flags del nodo
     ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
 
-    // Si está seleccionado, marcarlo
     if (go == app.moduleScene->GetSelectedGameObject())
     {
         node_flags |= ImGuiTreeNodeFlags_Selected;
     }
 
-    // Si no tiene hijos, hacerlo leaf (sin flecha)
     const std::vector<GameObject*>& children = go->GetChildren();
     if (children.empty())
     {
         node_flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     }
 
-    // Dibujar el nodo
     bool node_open = ImGui::TreeNodeEx((void*)go, node_flags, "%s", go->GetName());
 
-    // Detectar click para seleccionar
     if (ImGui::IsItemClicked())
     {
         app.moduleScene->SetSelectedGameObject(go);
         ModuleEditor::PushEnginePrintf("Selected GameObject: %s", go->GetName());
     }
 
-    // === DRAG AND DROP SOURCE ===
     if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
     {
         ImGui::SetDragDropPayload("HIERARCHY_NODE", &go, sizeof(GameObject*));
@@ -162,14 +172,12 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
         ImGui::EndDragDropSource();
     }
 
-    // === DRAG AND DROP TARGET ===
     if (ImGui::BeginDragDropTarget())
     {
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("HIERARCHY_NODE"))
         {
             GameObject* draggedGO = *(GameObject**)payload->Data;
 
-            // No permitir hacerse hijo de sí mismo o de sus propios hijos
             bool isValid = true;
             GameObject* checkParent = go;
             while (checkParent)
@@ -193,7 +201,6 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
         ImGui::EndDragDropTarget();
     }
 
-    // Si el nodo está abierto y tiene hijos, dibujarlos recursivamente
     if (node_open)
     {
         if (!children.empty())
@@ -204,7 +211,6 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
             }
         }
 
-        // Solo hacer TreePop si NO es leaf
         if (!(node_flags & ImGuiTreeNodeFlags_Leaf))
         {
             ImGui::TreePop();
@@ -1239,37 +1245,26 @@ void ModuleEditor::HandleGizmo()
     ComponentTransform* transform = selected->GetComponent<ComponentTransform>();
     if (!transform)
     {
+        PushEnginePrintf("ERROR: GameObject '%s' has NO Transform!", selected->GetName());
         return;
-    }
-
-    // ===== DEBUG: Ver si el gizmo está activo =====
-    static int frameCounter = 0;
-    if (frameCounter++ % 60 == 0) // Cada 60 frames
-    {
-        glm::vec3 pos = transform->GetPosition();
-        PushEnginePrintf("[GIZMO DEBUG] Selected: %s | Local Pos: (%.2f, %.2f, %.2f)",
-            selected->GetName(), pos.x, pos.y, pos.z);
     }
 
     ImGuiIO& io = ImGui::GetIO();
 
-    // Solo permitir cambio de modo si no estamos usando el gizmo
+    // Cambio de modo solo si NO estamos usando el gizmo
     if (!ImGuizmo::IsUsing())
     {
         if (ImGui::IsKeyPressed(ImGuiKey_W))
         {
             currentGizmoOperation = GizmoOperation::TRANSLATE;
-            PushEngineLog("Gizmo mode: TRANSLATE");
         }
         if (ImGui::IsKeyPressed(ImGuiKey_E))
         {
             currentGizmoOperation = GizmoOperation::ROTATE;
-            PushEngineLog("Gizmo mode: ROTATE");
         }
         if (ImGui::IsKeyPressed(ImGuiKey_R))
         {
             currentGizmoOperation = GizmoOperation::SCALE;
-            PushEngineLog("Gizmo mode: SCALE");
         }
     }
 
@@ -1282,21 +1277,10 @@ void ModuleEditor::HandleGizmo()
     glm::mat4 view = app.camera->getViewMatrix();
     glm::mat4 projection = app.camera->getProjectionMatrix();
 
-    // Usar la matriz global del transform
+    // Obtener matriz global del transform
     glm::mat4 modelMatrix = transform->GetGlobalMatrix();
 
-    // ===== DEBUG: Ver la matriz =====
-    static bool lastWasUsing = false;
-    bool currentlyUsing = ImGuizmo::IsUsing();
-
-    if (currentlyUsing && !lastWasUsing)
-    {
-        PushEngineLog("====== STARTED USING GIZMO ======");
-        glm::vec3 mPos = glm::vec3(modelMatrix[3]);
-        PushEnginePrintf("Matrix position: (%.2f, %.2f, %.2f)", mPos.x, mPos.y, mPos.z);
-    }
-    lastWasUsing = currentlyUsing;
-
+    // Determinar operacion
     ImGuizmo::OPERATION operation;
     switch (currentGizmoOperation)
     {
@@ -1305,10 +1289,12 @@ void ModuleEditor::HandleGizmo()
     case GizmoOperation::SCALE:     operation = ImGuizmo::SCALE;     break;
     }
 
+    // Determinar modo (Local/World)
     ImGuizmo::MODE mode = (currentGizmoMode == GizmoMode::LOCAL)
         ? ImGuizmo::LOCAL
         : ImGuizmo::WORLD;
 
+    // Snap
     float* snap = nullptr;
     float snapArray[3] = { 0.0f, 0.0f, 0.0f };
     if (useSnap)
@@ -1330,110 +1316,77 @@ void ModuleEditor::HandleGizmo()
         }
     }
 
-    glm::mat4 deltaMatrix;
-
+    // DIBUJAR Y MANIPULAR GIZMO
     bool manipulated = ImGuizmo::Manipulate(
         glm::value_ptr(view),
         glm::value_ptr(projection),
         operation,
         mode,
         glm::value_ptr(modelMatrix),
-        glm::value_ptr(deltaMatrix),
+        nullptr,
         snap
     );
 
-    // ===== DEBUG: Ver si manipulated es true =====
+    // SI SE MANIPULO, APLICAR CAMBIOS
     if (manipulated)
     {
-        PushEngineLog(">>> MANIPULATED = TRUE <<<");
-    }
-
-    if (manipulated && ImGuizmo::IsUsing())
-    {
-        PushEngineLog(">>> INSIDE MANIPULATION BLOCK <<<");
-
         // Descomponer la nueva matriz global
-        glm::vec3 newGlobalPosition, newGlobalScale, skew;
+        glm::vec3 newPos, newScale, skew;
         glm::vec4 perspective;
-        glm::quat newGlobalRotation;
+        glm::quat newRot;
 
-        glm::decompose(modelMatrix, newGlobalScale, newGlobalRotation, newGlobalPosition, skew, perspective);
+        glm::decompose(modelMatrix, newScale, newRot, newPos, skew, perspective);
 
-        PushEnginePrintf("New global pos: (%.2f, %.2f, %.2f)",
-            newGlobalPosition.x, newGlobalPosition.y, newGlobalPosition.z);
-
-        // Si tiene padre, necesitamos convertir a local
+        // Si tiene padre, convertir a coordenadas locales
         if (selected->GetParent())
         {
-            PushEngineLog("Has parent - converting to local");
-
             GameObject* parent = selected->GetParent();
             ComponentTransform* parentTransform = parent->GetComponent<ComponentTransform>();
 
             if (parentTransform)
             {
-                // Calcular matriz local = inverse(parentGlobal) * global
                 glm::mat4 parentGlobalMatrix = parentTransform->GetGlobalMatrix();
                 glm::mat4 localMatrix = glm::inverse(parentGlobalMatrix) * modelMatrix;
 
-                // Descomponer matriz local
                 glm::vec3 localPos, localScale, localSkew;
                 glm::vec4 localPerspective;
-                glm::quat localRotation;
+                glm::quat localRot;
 
-                glm::decompose(localMatrix, localScale, localRotation, localPos, localSkew, localPerspective);
+                glm::decompose(localMatrix, localScale, localRot, localPos, localSkew, localPerspective);
 
-                PushEnginePrintf("Calculated local pos: (%.2f, %.2f, %.2f)",
-                    localPos.x, localPos.y, localPos.z);
-
-                // Aplicar según operación
+                // Aplicar segun operacion
                 switch (currentGizmoOperation)
                 {
                 case GizmoOperation::TRANSLATE:
                     transform->SetPosition(localPos);
-                    PushEnginePrintf("SET Position to: (%.2f, %.2f, %.2f)", localPos.x, localPos.y, localPos.z);
                     break;
-
                 case GizmoOperation::ROTATE:
-                    transform->SetRotation(localRotation);
-                    PushEngineLog("SET Rotation");
+                    transform->SetRotation(localRot);
                     break;
-
                 case GizmoOperation::SCALE:
                     transform->SetScale(localScale);
-                    PushEnginePrintf("SET Scale to: (%.2f, %.2f, %.2f)", localScale.x, localScale.y, localScale.z);
                     break;
                 }
             }
         }
         else
         {
-            PushEngineLog("No parent - using global values");
-
             // Sin padre, usar valores globales directamente
             switch (currentGizmoOperation)
             {
             case GizmoOperation::TRANSLATE:
-                transform->SetPosition(newGlobalPosition);
-                PushEnginePrintf("SET Position to: (%.2f, %.2f, %.2f)",
-                    newGlobalPosition.x, newGlobalPosition.y, newGlobalPosition.z);
+                transform->SetPosition(newPos);
                 break;
-
             case GizmoOperation::ROTATE:
-                transform->SetRotation(newGlobalRotation);
-                PushEngineLog("SET Rotation");
+                transform->SetRotation(newRot);
                 break;
-
             case GizmoOperation::SCALE:
-                transform->SetScale(newGlobalScale);
-                PushEnginePrintf("SET Scale to: (%.2f, %.2f, %.2f)",
-                    newGlobalScale.x, newGlobalScale.y, newGlobalScale.z);
+                transform->SetScale(newScale);
                 break;
             }
         }
 
         // Actualizar AABBs
         app.moduleScene->UpdateAllAABBs();
-        PushEngineLog("AABBs updated");
     }
 }
