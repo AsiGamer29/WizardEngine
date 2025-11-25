@@ -83,6 +83,16 @@ void ComponentMaterial::Bind()
     GLuint texToBind = (overrideTextureID != 0) ? overrideTextureID : textureID;
     glBindTexture(GL_TEXTURE_2D, texToBind);
 
+    if (alphaMode == AlphaMode::ALPHA_TEST)
+    {
+        glEnable(GL_ALPHA_TEST);
+        glAlphaFunc(GL_GREATER, alphaCutoff);
+    }
+    else
+    {
+        glDisable(GL_ALPHA_TEST);
+    }
+
     if (alphaMode == AlphaMode::ALPHA_BLEND)
     {
         glEnable(GL_BLEND);
@@ -97,6 +107,7 @@ void ComponentMaterial::Bind()
 void ComponentMaterial::Unbind()
 {
     glBindTexture(GL_TEXTURE_2D, 0);
+    glDisable(GL_ALPHA_TEST);
     glDisable(GL_BLEND);
 }
 
@@ -132,90 +143,6 @@ void ComponentMaterial::OnEditor()
 
         ImGui::Separator();
 
-        // === SHADER SELECTION ===
-        ImGui::Text("Shader Settings:");
-        const char* shaderTypeNames[] = {
-            "Unlit (No Lighting)",
-            "Phong (Vertex)",
-            "Phong (Pixel)",
-            "Blinn-Phong (Pixel)"
-        };
-        int currentShaderType = (int)shaderType;
-        if (ImGui::Combo("Shader Type", &currentShaderType, shaderTypeNames, 4))
-        {
-            shaderType = (ShaderType)currentShaderType;
-        }
-
-        // Mostrar info sobre el shader seleccionado
-        ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
-        switch (shaderType)
-        {
-        case ShaderType::UNLIT:
-            ImGui::TextWrapped("No lighting calculations. Shows texture as-is.");
-            break;
-        case ShaderType::VERTEX_PHONG:
-            ImGui::TextWrapped("Phong lighting calculated per-vertex. Faster but less accurate.");
-            break;
-        case ShaderType::PIXEL_PHONG:
-            ImGui::TextWrapped("Phong lighting calculated per-pixel. More accurate specular highlights.");
-            break;
-        case ShaderType::PIXEL_BLINN_PHONG:
-            ImGui::TextWrapped("Blinn-Phong lighting per-pixel. Better performance than Phong with similar quality.");
-            break;
-        }
-        ImGui::PopStyleColor();
-
-        ImGui::Separator();
-
-        // === LIGHTING PROPERTIES (solo si NO es UNLIT) ===
-        if (shaderType != ShaderType::UNLIT)
-        {
-            ImGui::Text("Lighting Properties:");
-
-            float ambient[3] = { ambientColor.x, ambientColor.y, ambientColor.z };
-            if (ImGui::ColorEdit3("Ambient", ambient))
-            {
-                ambientColor = glm::vec3(ambient[0], ambient[1], ambient[2]);
-            }
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Base color in shadows (minimum brightness)");
-
-            float diffuse[3] = { diffuseColor.x, diffuseColor.y, diffuseColor.z };
-            if (ImGui::ColorEdit3("Diffuse", diffuse))
-            {
-                diffuseColor = glm::vec3(diffuse[0], diffuse[1], diffuse[2]);
-            }
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Main surface color affected by light direction");
-
-            float specular[3] = { specularColor.x, specularColor.y, specularColor.z };
-            if (ImGui::ColorEdit3("Specular", specular))
-            {
-                specularColor = glm::vec3(specular[0], specular[1], specular[2]);
-            }
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Highlight color (shininess reflection)");
-
-            ImGui::SliderFloat("Shininess", &shininess, 1.0f, 256.0f, "%.1f");
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Controls how sharp/focused the specular highlight is (higher = sharper)");
-
-            ImGui::Separator();
-        }
-
-        // === COLOR TINT ===
-        float tint[4] = { colorTint.x, colorTint.y, colorTint.z, colorTint.w };
-        if (ImGui::ColorEdit4("Color Tint", tint))
-        {
-            colorTint = glm::vec4(tint[0], tint[1], tint[2], tint[3]);
-        }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Multiplies the texture color");
-
-        ImGui::Separator();
-
-        // === ALPHA MODE ===
         const char* alphaModeNames[] = { "Opaque", "Alpha Test", "Alpha Blend" };
         int currentMode = (int)alphaMode;
         if (ImGui::Combo("Alpha Mode", &currentMode, alphaModeNames, 3))
@@ -226,8 +153,6 @@ void ComponentMaterial::OnEditor()
         if (alphaMode == AlphaMode::ALPHA_TEST)
         {
             ImGui::SliderFloat("Alpha Cutoff", &alphaCutoff, 0.0f, 1.0f);
-            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
-                "Pixels with alpha < %.2f will be discarded", alphaCutoff);
         }
 
         if (alphaMode == AlphaMode::ALPHA_BLEND)
@@ -239,35 +164,7 @@ void ComponentMaterial::OnEditor()
                 blendMode = (BlendMode)currentBlend;
             }
 
-            ImGui::Spacing();
             ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f), "Warning: Needs depth sorting!");
-            ImGui::TextWrapped("Blended objects are rendered back-to-front automatically.");
-
-            ImGui::Spacing();
-            ImGui::Text("Blend Mode Info:");
-            switch (blendMode)
-            {
-            case BlendMode::STANDARD:
-                ImGui::BulletText("Standard transparency");
-                ImGui::BulletText("Formula: SrcAlpha + (1-SrcAlpha)*Dst");
-                break;
-            case BlendMode::ADDITIVE:
-                ImGui::BulletText("Additive blending (glow effect)");
-                ImGui::BulletText("Formula: SrcAlpha*Src + Dst");
-                break;
-            case BlendMode::MULTIPLY:
-                ImGui::BulletText("Multiply blending (darken)");
-                ImGui::BulletText("Formula: Dst * Src");
-                break;
-            case BlendMode::SCREEN:
-                ImGui::BulletText("Screen blending (lighten)");
-                ImGui::BulletText("Formula: 1 - (1-Src)*(1-Dst)");
-                break;
-            case BlendMode::PREMULTIPLIED:
-                ImGui::BulletText("Premultiplied alpha");
-                ImGui::BulletText("Formula: Src + (1-SrcAlpha)*Dst");
-                break;
-            }
         }
     }
 }
