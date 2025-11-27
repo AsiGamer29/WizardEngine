@@ -303,6 +303,44 @@ bool ModuleEditor::Start()
     return true;
 }
 
+static void CreateEmptyGameObject() {
+    auto& app = Application::GetInstance();
+
+    if (!app.moduleScene) {
+        std::cerr << "ModuleScene no esta inicializado" << std::endl;
+        return;
+    }
+
+    static int emptyCounter = 0;
+    std::string objectName = "Empty_" + std::to_string(++emptyCounter);
+
+    // CreateGameObject ya crea el Transform automaticamente
+    GameObject* gameObject = app.moduleScene->CreateGameObject(objectName.c_str(), app.moduleScene->GetRoot());
+
+    if (!gameObject) {
+        std::cerr << "Error al crear GameObject" << std::endl;
+        return;
+    }
+
+    // El Transform ya existe, solo lo obtenemos
+    ComponentTransform* transform = gameObject->GetComponent<ComponentTransform>();
+
+    if (!transform) {
+        ModuleEditor::PushEngineLog("CRITICAL ERROR: GameObject created without Transform!");
+        return;
+    }
+
+    // Valores por defecto (position 0, scale 1, rotation identity)
+    transform->SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
+    transform->SetScale(glm::vec3(1.0f, 1.0f, 1.0f));
+    transform->SetRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+
+    ModuleEditor::PushEnginePrintf("Empty GameObject created: %s", objectName.c_str());
+
+    // Actualizar AABBs
+    app.moduleScene->UpdateAllAABBs();
+}
+
 bool ModuleEditor::PreUpdate()
 {
     ImGui_ImplOpenGL3_NewFrame();
@@ -411,8 +449,16 @@ bool ModuleEditor::Update()
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Geometry"))
+        if (ImGui::BeginMenu("GameObject"))
         {
+            if (ImGui::MenuItem("Create Empty"))
+            {
+                CreateEmptyGameObject();
+                PushEngineLog("Created empty GameObject");
+            }
+
+            ImGui::Separator();
+
             if (ImGui::MenuItem("Cube"))
             {
                 requested_geometry = "Cube";
@@ -886,18 +932,6 @@ bool ModuleEditor::Update()
                         PushEnginePrintf("Alpha mode changed to: %s", alphaModeNames[currentMode]);
                     }
 
-                    // === ALPHA TEST CONTROLS ===
-                    if (mat->GetAlphaMode() == AlphaMode::ALPHA_TEST)
-                    {
-                        float alphaCutoff = mat->GetAlphaCutoff();
-                        if (ImGui::SliderFloat("Alpha Cutoff", &alphaCutoff, 0.0f, 1.0f))
-                        {
-                            mat->SetAlphaCutoff(alphaCutoff);
-                        }
-                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
-                            "Pixels with alpha < %.2f will be discarded", alphaCutoff);
-                    }
-
                     // === ALPHA BLEND CONTROLS ===
                     if (mat->GetAlphaMode() == AlphaMode::ALPHA_BLEND)
                     {
@@ -917,7 +951,6 @@ bool ModuleEditor::Update()
 
                         // Info sobre cada blend mode
                         ImGui::Spacing();
-                        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f), "Warning: Needs depth sorting!");
                         ImGui::TextWrapped("Blended objects are rendered back-to-front automatically.");
 
                         ImGui::Spacing();
