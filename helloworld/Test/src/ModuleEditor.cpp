@@ -192,10 +192,60 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
 
             if (isValid && draggedGO != go)
             {
-                draggedGO->SetParent(go);
-                ModuleEditor::PushEnginePrintf("%s is now child of %s",
-                    draggedGO->GetName(), go->GetName());
-                app.moduleScene->UpdateAllAABBs();
+                // CRÍTICO: Guardar la posición global ANTES de cambiar el padre
+                ComponentTransform* draggedTransform = draggedGO->GetComponent<ComponentTransform>();
+
+                if (draggedTransform)
+                {
+                    // Obtener matriz global actual
+                    glm::mat4 currentGlobalMatrix = draggedTransform->GetGlobalMatrix();
+
+                    // Cambiar el padre
+                    draggedGO->SetParent(go);
+
+                    // Ahora calcular la posición local necesaria para mantener la misma posición global
+                    ComponentTransform* newParentTransform = go->GetComponent<ComponentTransform>();
+
+                    if (newParentTransform)
+                    {
+                        // Matriz global del nuevo padre
+                        glm::mat4 parentGlobalMatrix = newParentTransform->GetGlobalMatrix();
+
+                        // Calcular matriz local: local = inverse(parent) * global
+                        glm::mat4 newLocalMatrix = glm::inverse(parentGlobalMatrix) * currentGlobalMatrix;
+
+                        // Descomponer la nueva matriz local
+                        glm::vec3 newLocalPos, newLocalScale, skew;
+                        glm::vec4 perspective;
+                        glm::quat newLocalRot;
+
+                        glm::decompose(newLocalMatrix, newLocalScale, newLocalRot, newLocalPos, skew, perspective);
+
+                        // Aplicar las nuevas coordenadas locales
+                        draggedTransform->SetPosition(newLocalPos);
+                        draggedTransform->SetRotation(newLocalRot);
+                        draggedTransform->SetScale(newLocalScale);
+
+                        ModuleEditor::PushEnginePrintf("%s is now child of %s (position preserved)",
+                            draggedGO->GetName(), go->GetName());
+                    }
+                    else
+                    {
+                        // Si el padre no tiene transform (caso raro), solo hacer el reparenting
+                        ModuleEditor::PushEnginePrintf("%s is now child of %s (WARNING: parent has no transform)",
+                            draggedGO->GetName(), go->GetName());
+                    }
+
+                    app.moduleScene->UpdateAllAABBs();
+                }
+                else
+                {
+                    // Si el objeto arrastrado no tiene transform, solo cambiar padre
+                    draggedGO->SetParent(go);
+                    ModuleEditor::PushEnginePrintf("%s is now child of %s (no transform to preserve)",
+                        draggedGO->GetName(), go->GetName());
+                    app.moduleScene->UpdateAllAABBs();
+                }
             }
         }
         ImGui::EndDragDropTarget();
