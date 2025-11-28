@@ -12,6 +12,9 @@
 #include <assimp/postprocess.h>
 #include <iostream>
 
+#include <nlohmann/json.hpp>
+#include <fstream>
+#include <map>
 
 ModuleScene::ModuleScene()
     : root(nullptr), selectedGameObject(nullptr)
@@ -28,10 +31,9 @@ bool ModuleScene::Start()
 {
     std::cout << "[ModuleScene] Initializing..." << std::endl;
 
-    // Crear Scene Root CON Transform
+    // Crear Scene Root
     root = new GameObject("Scene Root");
 
-    // CRITICO: Darle Transform al root
     ComponentTransform* rootTransform = static_cast<ComponentTransform*>(
         root->CreateComponent(ComponentType::TRANSFORM)
         );
@@ -43,7 +45,6 @@ bool ModuleScene::Start()
     }
 
     allGameObjects.push_back(root);
-
     std::cout << "[ModuleScene] Root GameObject created with Transform" << std::endl;
 
     return true;
@@ -56,12 +57,11 @@ bool ModuleScene::PreUpdate()
 
 bool ModuleScene::Update()
 {
-    // Actualizar todos los GameObjects (esto llamará Update en sus componentes)
+    // Actualizar todos los GameObjects
     if (root)
     {
         root->Update();
     }
-
 
     return true;
 }
@@ -71,7 +71,6 @@ bool ModuleScene::PostUpdate()
     return true;
 }
 
-
 void ModuleScene::RenderScene()
 {
     auto& app = Application::GetInstance();
@@ -79,10 +78,8 @@ void ModuleScene::RenderScene()
     if (!app.opengl)
         return;
 
-    // 1. Dibujar el GRID primero
     app.opengl->DrawGrid();
 
-    // 2. Dibujar todos los GameObjects con AABBs
     if (root)
     {
         app.opengl->DrawGameObjectsWithAABB(root);
@@ -92,9 +89,7 @@ void ModuleScene::RenderScene()
 bool ModuleScene::CleanUp()
 {
     std::cout << "[ModuleScene] Cleaning up..." << std::endl;
-
     ClearScene();
-
     return true;
 }
 
@@ -102,7 +97,6 @@ GameObject* ModuleScene::CreateGameObject(const char* name, GameObject* parent)
 {
     GameObject* go = new GameObject(name);
 
-    // CRITICO: Crear Transform automaticamente
     ComponentTransform* transform = static_cast<ComponentTransform*>(
         go->CreateComponent(ComponentType::TRANSFORM)
         );
@@ -113,7 +107,6 @@ GameObject* ModuleScene::CreateGameObject(const char* name, GameObject* parent)
         transform->SetRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
     }
 
-    // Establecer el padre si existe
     if (parent) {
         go->SetParent(parent);
     }
@@ -121,6 +114,7 @@ GameObject* ModuleScene::CreateGameObject(const char* name, GameObject* parent)
     allGameObjects.push_back(go);
     return go;
 }
+
 void ModuleScene::DestroyGameObject(GameObject* gameObject)
 {
     if (!gameObject || gameObject == root)
@@ -139,56 +133,38 @@ void ModuleScene::DestroyGameObject(GameObject* gameObject)
         gameObject->GetParent()->RemoveChild(gameObject);
     }
 
-    // Eliminar recursivamente todos los hijos
-    RecursiveDelete(gameObject);
+    // Eliminar el GameObject (su destructor eliminará sus hijos)
+    delete gameObject;
 }
 
-void ModuleScene::RecursiveDelete(GameObject* go)
-{
-    if (!go) return;
 
-    // Eliminar todos los hijos primero
-    std::vector<GameObject*> children = go->GetChildren();
-    for (GameObject* child : children)
-    {
-        RecursiveDelete(child);
-    }
-
-    // Eliminar este GameObject
-    delete go;
-}
 
 void ModuleScene::ClearScene()
 {
-    if (selectedGameObject)
-    {
-        selectedGameObject = nullptr;
-    }
+    std::cout << "[ModuleScene] Clearing scene..." << std::endl;
 
-    // Eliminar todo excepto el root
+    // Limpiar selección
+    selectedGameObject = nullptr;
+
+    // SOLUCIÓN: Solo eliminar el root
+    // Su destructor eliminará recursivamente todos sus hijos
     if (root)
     {
-        std::vector<GameObject*> children = root->GetChildren();
-        for (GameObject* child : children)
-        {
-            RecursiveDelete(child);
-        }
-
-        // Limpiar el root
+        std::cout << "[ModuleScene] Deleting root (will cascade to all children)..." << std::endl;
         delete root;
         root = nullptr;
     }
 
+    // Limpiar la lista (los punteros ya son inválidos)
     allGameObjects.clear();
 
-    std::cout << "[ModuleScene] Scene cleared" << std::endl;
+    std::cout << "[ModuleScene] Scene cleared successfully" << std::endl;
 }
 
 void ModuleScene::LoadModel(const char* path)
 {
     std::cout << "[ModuleScene] Loading model: " << path << std::endl;
 
-    // Asegurarse de que existe el root (por si acaso)
     if (!root)
     {
         root = new GameObject("Scene Root");
@@ -200,13 +176,12 @@ void ModuleScene::LoadModel(const char* path)
         if (rootTransform) {
             rootTransform->SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
             rootTransform->SetScale(glm::vec3(1.0f, 1.0f, 1.0f));
-            rootTransform->SetRotation(glm::quat(0.0f, 0.0f, 0.0f, 0.0f));
+            rootTransform->SetRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
         }
 
         allGameObjects.push_back(root);
     }
 
-    // Crear Assimp importer
     Assimp::Importer* importer = new Assimp::Importer();
 
     const aiScene* scene = importer->ReadFile(path,
@@ -225,7 +200,6 @@ void ModuleScene::LoadModel(const char* path)
     std::string pathStr(path);
     std::string basePath = pathStr.substr(0, pathStr.find_last_of("/\\"));
 
-    // Cada modelo se añade al root, como nuevo GameObject
     LoadFromAssimp(scene, scene->mRootNode, root, basePath);
 
     std::cout << "[ModuleScene] Model hierarchy loaded" << std::endl;
@@ -233,24 +207,19 @@ void ModuleScene::LoadModel(const char* path)
     delete importer;
 }
 
-
 void ModuleScene::LoadFromAssimp(const aiScene* scene, const aiNode* node, GameObject* parent, const std::string& basePath)
 {
-    // Crear GameObject para este nodo
     GameObject* gameObject = CreateGameObject(node->mName.C_Str(), parent);
 
-    // COMPONENTE TRANSFORM (obligatorio siempre)
     ComponentTransform* transform = (ComponentTransform*)gameObject->CreateComponent(ComponentType::TRANSFORM);
 
-    // Descomponer la transformación del nodo de Assimp
     aiVector3D translation, scaling;
     aiQuaternion rotation;
     node->mTransformation.Decompose(scaling, rotation, translation);
 
-    // Convertir a glm
     glm::vec3 pos(translation.x, translation.y, translation.z);
     glm::vec3 scale(scaling.x, scaling.y, scaling.z);
-    glm::quat rot(rotation.w, rotation.x, rotation.y, rotation.z); // glm usa (w,x,y,z)
+    glm::quat rot(rotation.w, rotation.x, rotation.y, rotation.z);
 
     transform->SetPosition(pos);
     transform->SetScale(scale);
@@ -259,7 +228,6 @@ void ModuleScene::LoadFromAssimp(const aiScene* scene, const aiNode* node, GameO
     std::cout << "[ModuleScene] Created GameObject: " << node->mName.C_Str()
         << " with transform" << std::endl;
 
-    // COMPONENTES MESH Y MATERIAL (si el nodo tiene meshes)
     for (unsigned int i = 0; i < node->mNumMeshes; i++)
     {
         unsigned int meshIndex = node->mMeshes[i];
@@ -267,21 +235,18 @@ void ModuleScene::LoadFromAssimp(const aiScene* scene, const aiNode* node, GameO
 
         std::cout << "[ModuleScene] - Processing mesh " << i << ": " << mesh->mName.C_Str() << std::endl;
 
-        // Si hay múltiples meshes en un nodo, crear un hijo por cada uno
         GameObject* meshGameObject = gameObject;
         if (i > 0)
         {
             std::string meshName = std::string(node->mName.C_Str()) + "_mesh_" + std::to_string(i);
             meshGameObject = CreateGameObject(meshName.c_str(), gameObject);
 
-            // Transform identity para los sub-meshes
             ComponentTransform* subTransform = (ComponentTransform*)meshGameObject->CreateComponent(ComponentType::TRANSFORM);
             subTransform->SetPosition(glm::vec3(0.0f));
             subTransform->SetScale(glm::vec3(1.0f));
             subTransform->SetRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
         }
 
-        // COMPONENTE MESH
         ComponentMesh* compMesh = (ComponentMesh*)meshGameObject->CreateComponent(ComponentType::MESH);
         compMesh->LoadMesh(mesh);
 
@@ -289,16 +254,12 @@ void ModuleScene::LoadFromAssimp(const aiScene* scene, const aiNode* node, GameO
             << mesh->mNumVertices << " vertices and "
             << mesh->mNumFaces << " faces" << std::endl;
 
-        // COMPONENTE MATERIAL (textura)
         ComponentMaterial* compMaterial = (ComponentMaterial*)meshGameObject->CreateComponent(ComponentType::MATERIAL);
 
-        // Intentar cargar textura desde el material de Assimp
         if (mesh->mMaterialIndex >= 0 && mesh->mMaterialIndex < scene->mNumMaterials)
         {
             aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
 
-            // Intentar obtener textura difusa
-            // Intentar obtener textura difusa
             unsigned int numTextures = material->GetTextureCount(aiTextureType_DIFFUSE);
 
             if (numTextures > 0)
@@ -306,13 +267,10 @@ void ModuleScene::LoadFromAssimp(const aiScene* scene, const aiNode* node, GameO
                 aiString texPath;
                 if (material->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == AI_SUCCESS)
                 {
-                    // Construir path completo
                     std::string fullPath = basePath + "/" + std::string(texPath.C_Str());
-
                     std::cout << "[ModuleScene]   - Loading texture: " << fullPath << std::endl;
                     compMaterial->LoadTexture(fullPath.c_str());
 
-                    // Path alternativo (solo el nombre del archivo, por si está en otra carpeta)
                     std::string fileName = texPath.C_Str();
                     size_t lastSlash = fileName.find_last_of("/\\");
                     if (lastSlash != std::string::npos)
@@ -327,8 +285,6 @@ void ModuleScene::LoadFromAssimp(const aiScene* scene, const aiNode* node, GameO
             {
                 std::cout << "[ModuleScene]   - No texture found, using checkerboard" << std::endl;
             }
-            
-            
         }
         else
         {
@@ -336,7 +292,6 @@ void ModuleScene::LoadFromAssimp(const aiScene* scene, const aiNode* node, GameO
         }
     }
 
-    // RECURSIÓN: Procesar todos los hijos del nodo
     for (unsigned int i = 0; i < node->mNumChildren; i++)
     {
         LoadFromAssimp(scene, node->mChildren[i], gameObject, basePath);
@@ -353,20 +308,17 @@ GameObject* ModuleScene::PerformRaycast(const Ray& ray)
 {
     std::vector<RayHit> candidates;
 
-    // Recolectar todos los hits desde el root
     if (root)
         CollectRaycastCandidates(root, ray, candidates);
 
     if (candidates.empty())
         return nullptr;
 
-    // Ordenar por distancia (más cercano primero)
     std::sort(candidates.begin(), candidates.end(),
         [](const RayHit& a, const RayHit& b) {
             return a.distance < b.distance;
         });
 
-    // Retornar el más cercano
     return candidates[0].gameObject;
 }
 
@@ -375,16 +327,117 @@ void ModuleScene::CollectRaycastCandidates(GameObject* go, const Ray& ray, std::
     if (!go || !go->IsActive())
         return;
 
-    // Test contra este GameObject
     RayHit hit;
     if (go->IntersectRay(ray, hit))
     {
         candidates.push_back(hit);
     }
 
-    // Recursión en hijos
     for (GameObject* child : go->GetChildren())
     {
         CollectRaycastCandidates(child, ray, candidates);
     }
+}
+
+bool ModuleScene::SaveScene(const std::string& filepath)
+{
+    nlohmann::json sceneJson;
+    sceneJson["GameObjects"] = nlohmann::json::array();
+
+    for (GameObject* go : allGameObjects)
+    {
+        if (go)
+        {
+            sceneJson["GameObjects"].push_back(go->Serialize());
+        }
+    }
+
+    std::ofstream file(filepath);
+    if (!file.is_open())
+    {
+        ModuleEditor::PushEnginePrintf("ERROR: Could not save scene to %s", filepath.c_str());
+        return false;
+    }
+
+    file << sceneJson.dump(4);
+    file.close();
+
+    currentScenePath = filepath;
+    ModuleEditor::PushEnginePrintf("Scene saved: %s (%zu objects)", filepath.c_str(), allGameObjects.size());
+
+    return true;
+}
+
+bool ModuleScene::LoadScene(const std::string& filepath)
+{
+    std::ifstream file(filepath);
+    if (!file.is_open())
+    {
+        ModuleEditor::PushEnginePrintf("ERROR: Could not open scene file: %s", filepath.c_str());
+        return false;
+    }
+
+    nlohmann::json sceneJson;
+    try
+    {
+        file >> sceneJson;
+    }
+    catch (const std::exception& e)
+    {
+        ModuleEditor::PushEnginePrintf("ERROR: Failed to parse scene JSON: %s", e.what());
+        file.close();
+        return false;
+    }
+    file.close();
+
+
+    ClearScene();
+
+    // Crear root nuevo
+    root = CreateGameObject("Root", nullptr);
+
+    std::map<uint32_t, GameObject*> uidMap;
+    std::map<GameObject*, uint32_t> parentMap;
+
+    if (sceneJson.contains("GameObjects"))
+    {
+        for (const auto& goJson : sceneJson["GameObjects"])
+        {
+            uint32_t uid = goJson["UID"].get<uint32_t>();
+            std::string name = goJson["Name"].get<std::string>();
+
+            GameObject* go = CreateGameObject(name.c_str(), nullptr);
+            go->SetUUID(UUID(uid));
+            go->Deserialize(goJson);
+
+            uidMap[uid] = go;
+
+            if (goJson.contains("ParentUID"))
+            {
+                uint32_t parentUID = goJson["ParentUID"].get<uint32_t>();
+                if (parentUID != 0)
+                {
+                    parentMap[go] = parentUID;
+                }
+            }
+        }
+    }
+
+    for (const auto& pair : parentMap)
+    {
+        GameObject* child = pair.first;
+        uint32_t parentUID = pair.second;
+
+        if (uidMap.find(parentUID) != uidMap.end())
+        {
+            GameObject* parent = uidMap[parentUID];
+            child->SetParent(parent);
+        }
+    }
+
+    UpdateAllAABBs();
+    currentScenePath = filepath;
+    ModuleEditor::PushEnginePrintf("Scene loaded: %s (%zu objects)", filepath.c_str(), allGameObjects.size());
+
+    return true;
 }

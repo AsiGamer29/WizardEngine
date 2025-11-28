@@ -11,7 +11,8 @@
 #include "ComponentTransform.h"
 #include <glm/gtc/type_ptr.hpp>
 
-// Includes para crear GameObjects con geometría
+#include <filesystem>
+
 #include "GeometryGenerator.h"
 #include "GameObject.h"
 #include "ComponentTransform.h"
@@ -20,7 +21,6 @@
 #include "ModuleScene.h"
 #include "Texture.h"
 
-// Enable experimental GLM extensions used (quaternion utilities)
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include <glm/gtx/quaternion.hpp>
@@ -350,6 +350,9 @@ bool ModuleEditor::Start()
 
     PushEngineLog("Engine started.");
 
+    std::filesystem::create_directories(scenes_directory);
+    PushEnginePrintf("Scene directory ready: %s", scenes_directory.c_str());
+
     return true;
 }
 
@@ -398,6 +401,12 @@ bool ModuleEditor::PreUpdate()
     ImGui::NewFrame();
     ImGuizmo::BeginFrame();
 
+    if (show_save_scene_popup)
+        ShowSaveScenePopup();
+
+    if (show_load_scene_popup)
+        ShowLoadScenePopup();
+
     return true;
 }
 
@@ -413,7 +422,41 @@ bool ModuleEditor::Update()
     {
         if (ImGui::BeginMenu("File"))
         {
-            if (ImGui::MenuItem("Exit"))
+            // NUEVO: Save Scene
+            if (ImGui::MenuItem("Save Scene", "Ctrl+S"))
+            {
+                show_save_scene_popup = true;
+                PushEngineLog("Opening Save Scene dialog...");
+            }
+
+            // NUEVO: Load Scene
+            if (ImGui::MenuItem("Load Scene", "Ctrl+O"))
+            {
+                RefreshSceneList();
+                show_load_scene_popup = true;
+                PushEngineLog("Opening Load Scene dialog...");
+            }
+
+            ImGui::Separator();
+
+            if (ImGui::MenuItem("New Scene", "Ctrl+N"))
+            {
+                auto& app = Application::GetInstance();
+                if (app.moduleScene)
+                {
+                    app.moduleScene->ClearScene();
+
+                    // Recrear root
+                    GameObject* newRoot = app.moduleScene->CreateGameObject("Scene Root", nullptr);
+                    app.moduleScene->SetRoot(newRoot);
+
+                    PushEngineLog("New scene created");
+                }
+            }
+
+            ImGui::Separator();
+
+            if (ImGui::MenuItem("Exit", "Alt+F4"))
             {
                 SDL_Event evt;
                 SDL_zero(evt);
@@ -421,6 +464,7 @@ bool ModuleEditor::Update()
                 SDL_PushEvent(&evt);
                 PushEngineLog("User requested Exit.");
             }
+
             ImGui::EndMenu();
         }
 
@@ -1471,5 +1515,210 @@ void ModuleEditor::HandleGizmo()
 
         // Actualizar AABBs
         app.moduleScene->UpdateAllAABBs();
+    }
+}
+
+void ModuleEditor::RefreshSceneList()
+{
+    available_scenes.clear();
+
+    // Crear directorio si no existe
+    std::filesystem::create_directories(scenes_directory);
+
+    // Buscar archivos .json en el directorio
+    for (const auto& entry : std::filesystem::directory_iterator(scenes_directory))
+    {
+        if (entry.is_regular_file())
+        {
+            std::string filename = entry.path().filename().string();
+            std::string ext = entry.path().extension().string();
+
+            // Solo archivos .json
+            if (ext == ".json")
+            {
+                available_scenes.push_back(filename);
+            }
+        }
+    }
+
+    PushEnginePrintf("Found %zu scene(s) in %s", available_scenes.size(), scenes_directory.c_str());
+}
+
+void ModuleEditor::ShowSaveScenePopup()
+{
+    ImGui::OpenPopup("Save Scene");
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(400, 150), ImGuiCond_Appearing);
+
+    if (ImGui::BeginPopupModal("Save Scene", &show_save_scene_popup, ImGuiWindowFlags_NoResize))
+    {
+        ImGui::Text("Enter scene name:");
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::InputText("##filename", scene_filename_buffer, sizeof(scene_filename_buffer));
+
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Location: %s", scenes_directory.c_str());
+        ImGui::Spacing();
+
+        ImGui::Separator();
+
+        // Boton SAVE
+        if (ImGui::Button("Save", ImVec2(120, 0)))
+        {
+            std::string filename = scene_filename_buffer;
+
+            // Anadir extension .json si no la tiene
+            if (filename.find(".json") == std::string::npos)
+            {
+                filename += ".json";
+            }
+
+            std::string fullPath = scenes_directory + filename;
+
+            auto& app = Application::GetInstance();
+            if (app.moduleScene)
+            {
+                if (app.moduleScene->SaveScene(fullPath))
+                {
+                    PushEnginePrintf("Scene saved successfully: %s", filename.c_str());
+                }
+                else
+                {
+                    PushEnginePrintf("ERROR: Failed to save scene: %s", filename.c_str());
+                }
+            }
+
+            show_save_scene_popup = false;
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::SameLine();
+
+        // Boton CANCEL
+        if (ImGui::Button("Cancel", ImVec2(120, 0)))
+        {
+            show_save_scene_popup = false;
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
+void ModuleEditor::ShowLoadScenePopup()
+{
+    ImGui::OpenPopup("Load Scene");
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_Appearing);
+
+    if (ImGui::BeginPopupModal("Load Scene", &show_load_scene_popup))
+    {
+        ImGui::Text("Select a scene to load:");
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Lista de escenas
+        ImGui::BeginChild("SceneListRegion", ImVec2(0, 280), true);
+        {
+            if (available_scenes.empty())
+            {
+                ImGui::TextDisabled("No scenes found in %s", scenes_directory.c_str());
+            }
+            else
+            {
+                for (size_t i = 0; i < available_scenes.size(); i++)
+                {
+                    std::string& sceneName = available_scenes[i];
+
+                    ImGui::PushID(i);
+
+                    // Mostrar nombre del archivo
+                    if (ImGui::Selectable(sceneName.c_str(), false, ImGuiSelectableFlags_DontClosePopups))
+                    {
+                        // Copiar nombre al buffer
+                        strncpy(scene_filename_buffer, sceneName.c_str(), sizeof(scene_filename_buffer) - 1);
+                        scene_filename_buffer[sizeof(scene_filename_buffer) - 1] = '\0';
+                    }
+
+                    // Doble click para cargar directamente
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                    {
+                        std::string fullPath = scenes_directory + sceneName;
+
+                        auto& app = Application::GetInstance();
+                        if (app.moduleScene)
+                        {
+                            if (app.moduleScene->LoadScene(fullPath))
+                            {
+                                PushEnginePrintf("Scene loaded successfully: %s", sceneName.c_str());
+                            }
+                            else
+                            {
+                                PushEnginePrintf("ERROR: Failed to load scene: %s", sceneName.c_str());
+                            }
+                        }
+
+                        show_load_scene_popup = false;
+                        ImGui::CloseCurrentPopup();
+                    }
+
+                    ImGui::PopID();
+                }
+            }
+        }
+        ImGui::EndChild();
+
+        ImGui::Spacing();
+        ImGui::Text("Selected: %s", scene_filename_buffer);
+        ImGui::Spacing();
+        ImGui::Separator();
+
+        // Boton LOAD
+        if (ImGui::Button("Load", ImVec2(120, 0)))
+        {
+            std::string filename = scene_filename_buffer;
+            std::string fullPath = scenes_directory + filename;
+
+            auto& app = Application::GetInstance();
+            if (app.moduleScene)
+            {
+                if (app.moduleScene->LoadScene(fullPath))
+                {
+                    PushEnginePrintf("Scene loaded successfully: %s", filename.c_str());
+                }
+                else
+                {
+                    PushEnginePrintf("ERROR: Failed to load scene: %s", filename.c_str());
+                }
+            }
+
+            show_load_scene_popup = false;
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::SameLine();
+
+        // Boton REFRESH
+        if (ImGui::Button("Refresh", ImVec2(120, 0)))
+        {
+            RefreshSceneList();
+        }
+
+        ImGui::SameLine();
+
+        // Boton CANCEL
+        if (ImGui::Button("Cancel", ImVec2(120, 0)))
+        {
+            show_load_scene_popup = false;
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
     }
 }

@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.10)
 
 project(Engine)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 find_package(fmt CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
@@ -10,6 +14,7 @@ find_package(assimp CONFIG REQUIRED)
 find_package(DevIL REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(imguizmo CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 file(GLOB SOURCES "src/*.cpp" "src/*.h")
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/src PREFIX "Source" FILES ${SOURCES})
@@ -24,3 +29,4 @@ target_link_libraries(Engine PRIVATE DevIL::IL)
 target_link_libraries(Engine PRIVATE DevIL::ILU)
 target_link_libraries(Engine PRIVATE imgui::imgui)
 target_link_libraries(Engine PRIVATE imguizmo::imguizmo)
+target_link_libraries(Engine PRIVATE nlohmann_json::nlohmann_json)

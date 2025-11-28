@@ -52,8 +52,12 @@ public:
     GameObject* PerformRaycast(const Ray& ray);
     void UpdateAllAABBs();
 
+    bool SaveScene(const std::string& filepath);
+    bool LoadScene(const std::string& filepath);
+    void SetRoot(GameObject* newRoot) { root = newRoot; }
+
 private:
     void LoadFromAssimp(const aiScene* scene, const aiNode* node, GameObject* parent, const std::string& basePath);
-    void RecursiveDelete(GameObject* go);
     void CollectRaycastCandidates(GameObject* go, const Ray& ray, std::vector<RayHit>& candidates);
+    std::string currentScenePath;
 };

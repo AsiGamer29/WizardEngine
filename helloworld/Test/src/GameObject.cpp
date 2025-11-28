@@ -1,114 +1,90 @@
 #include "GameObject.h"
-#include "BaseComponent.h"
 #include "ComponentTransform.h"
 #include "ComponentMesh.h"
 #include "ComponentMaterial.h"
 #include "AABB.h"
-#include <iostream>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
+#include "Ray.h"
+#include <algorithm>
+#include <nlohmann/json.hpp>
 
-GameObject::GameObject(const char* name)
-    : name(name), active(true), parent(nullptr)
+GameObject::GameObject(const char* name, GameObject* parent)
+    : name(name)
+    , active(true)
+    , parent(parent)
+    , hasAABB(false)
+    , uuid(UUID::Generate())
 {
+    CreateComponent(ComponentType::TRANSFORM);
+
+    if (parent)
+    {
+        parent->AddChild(this);
+    }
 }
 
 GameObject::~GameObject()
 {
-    // Limpiar componentes
     for (Component* comp : components)
     {
         delete comp;
     }
     components.clear();
 
-    // No eliminamos hijos aquí, lo hace ModuleScene::RecursiveDelete
+    for (GameObject* child : children)
+    {
+        delete child;
+    }
+    children.clear();
 }
 
 void GameObject::Update()
 {
-    if (!active)
-        return;
+    if (!active) return;
 
-    // Actualizar componentes
+    // Actualizar todos los componentes
     for (Component* comp : components)
     {
-        if (comp->IsActive())
+        if (comp && comp->IsActive())
         {
             comp->Update();
         }
     }
 
-    // Actualizar hijos
+    // Actualizar hijos recursivamente
     for (GameObject* child : children)
     {
-        child->Update();
+        if (child)
+        {
+            child->Update();
+        }
     }
 }
 
 Component* GameObject::CreateComponent(ComponentType type)
 {
-    Component* newComponent = nullptr;
+    Component* newComp = nullptr;
 
     switch (type)
     {
     case ComponentType::TRANSFORM:
-        newComponent = new ComponentTransform(this);
+        newComp = new ComponentTransform(this);
         break;
-
     case ComponentType::MESH:
-        newComponent = new ComponentMesh(this);
+        newComp = new ComponentMesh(this);
         break;
-
     case ComponentType::MATERIAL:
-        newComponent = new ComponentMaterial(this);
+        newComp = new ComponentMaterial(this);
         break;
-
     default:
-        std::cerr << "[GameObject] Unknown component type" << std::endl;
         return nullptr;
     }
 
-    components.push_back(newComponent);
-    return newComponent;
-}
-
-Component* GameObject::GetComponent(ComponentType type)
-{
-    for (Component* comp : components)
+    if (newComp)
     {
-        if (comp->GetType() == type)
-            return comp;
-    }
-    return nullptr;
-}
-
-void GameObject::AddChild(GameObject* child)
-{
-    if (!child)
-        return;
-
-    // Si ya tenía padre, quitarlo de su lista de hijos
-    if (child->parent)
-    {
-        child->parent->RemoveChild(child);
+        components.push_back(newComp);
     }
 
-    child->parent = this;
-    children.push_back(child);
-}
-
-void GameObject::RemoveChild(GameObject* child)
-{
-    if (!child)
-        return;
-
-    auto it = std::find(children.begin(), children.end(), child);
-    if (it != children.end())
-    {
-        (*it)->parent = nullptr;
-        children.erase(it);
-    }
+    return newComp;
 }
 
 void GameObject::SetParent(GameObject* newParent)
@@ -118,250 +94,229 @@ void GameObject::SetParent(GameObject* newParent)
         parent->RemoveChild(this);
     }
 
-    if (newParent)
+    parent = newParent;
+
+    if (parent)
     {
-        newParent->AddChild(this);
+        parent->AddChild(this);
     }
 }
-void GameObject::AddComponent(Component* component)
+
+void GameObject::AddChild(GameObject* child)
 {
-    if (component == nullptr)
+    if (child && std::find(children.begin(), children.end(), child) == children.end())
     {
-        std::cerr << "[GameObject] Cannot add null component" << std::endl;
-        return;
+        children.push_back(child);
     }
-
-    // Verificar que no exista ya
-    auto it = std::find(components.begin(), components.end(), component);
-    if (it != components.end())
-    {
-        std::cerr << "[GameObject] Component already exists in GameObject" << std::endl;
-        return;
-    }
-
-    components.push_back(component);
 }
 
+void GameObject::RemoveChild(GameObject* child)
+{
+    auto it = std::find(children.begin(), children.end(), child);
+    if (it != children.end())
+    {
+        children.erase(it);
+    }
+}
 
 void GameObject::UpdateAABB()
 {
-    globalAABB.Reset();
-
-    ComponentTransform* transform = GetComponent<ComponentTransform>();
     ComponentMesh* mesh = GetComponent<ComponentMesh>();
+    ComponentTransform* transform = GetComponent<ComponentTransform>();
 
-    if (mesh && transform)
+    if (!mesh || !transform)
     {
-        // Obtener AABB local del mesh (ya calculado)
-        AABB localAABB = mesh->GetLocalAABB();
-
-        if (localAABB.IsValid())
-        {
-            // Transformar el AABB local a espacio world
-            glm::mat4 worldMatrix = transform->GetGlobalMatrix();
-            AABB worldAABB = localAABB.Transform(worldMatrix);
-
-            // Expandir nuestro AABB con el AABB transformado
-            globalAABB.Encapsulate(worldAABB);
-        }
+        hasAABB = false;
+        return;
     }
 
-    // Actualizar recursivamente todos los hijos
-    for (GameObject* child : children)
+    AABB localAABB = mesh->GetLocalAABB();
+    if (localAABB.min == glm::vec3(0.0f) && localAABB.max == glm::vec3(0.0f))
     {
-        if (child)
-        {
-            child->UpdateAABB();
-
-            const AABB& childAABB = child->GetAABB();
-            if (childAABB.IsValid())
-            {
-                globalAABB.Encapsulate(childAABB);
-            }
-        }
+        hasAABB = false;
+        return;
     }
+
+    glm::mat4 globalMatrix = transform->GetGlobalMatrix();
+
+    glm::vec3 corners[8] = {
+        glm::vec3(localAABB.min.x, localAABB.min.y, localAABB.min.z),
+        glm::vec3(localAABB.max.x, localAABB.min.y, localAABB.min.z),
+        glm::vec3(localAABB.min.x, localAABB.max.y, localAABB.min.z),
+        glm::vec3(localAABB.max.x, localAABB.max.y, localAABB.min.z),
+        glm::vec3(localAABB.min.x, localAABB.min.y, localAABB.max.z),
+        glm::vec3(localAABB.max.x, localAABB.min.y, localAABB.max.z),
+        glm::vec3(localAABB.min.x, localAABB.max.y, localAABB.max.z),
+        glm::vec3(localAABB.max.x, localAABB.max.y, localAABB.max.z)
+    };
+
+    glm::vec3 transformedCorners[8];
+    for (int i = 0; i < 8; ++i)
+    {
+        glm::vec4 worldPos = globalMatrix * glm::vec4(corners[i], 1.0f);
+        transformedCorners[i] = glm::vec3(worldPos);
+    }
+
+    glm::vec3 newMin = transformedCorners[0];
+    glm::vec3 newMax = transformedCorners[0];
+
+    for (int i = 1; i < 8; ++i)
+    {
+        newMin = glm::min(newMin, transformedCorners[i]);
+        newMax = glm::max(newMax, transformedCorners[i]);
+    }
+
+    aabb.min = newMin;
+    aabb.max = newMax;
+    hasAABB = true;
 }
 
-bool GameObject::IntersectRayTriangles(const Ray& rayLocal, ComponentMesh* mesh,
-    float& closestDist, glm::vec3& hitPoint)
+void GameObject::SetAABB(const AABB& newAABB)
 {
-    if (!mesh)
-        return false;
-
-    // CORREGIDO: Ahora usa MeshVertex en lugar de float[]
-    const std::vector<MeshVertex>& vertices = mesh->GetMeshVertices();
-    const std::vector<unsigned int>& indices = mesh->GetIndices();
-
-    if (vertices.empty() || indices.empty())
-        return false;
-
-    bool anyHit = false;
-    closestDist = FLT_MAX;
-
-    // Iterar sobre todos los triángulos
-    for (size_t i = 0; i < indices.size(); i += 3)
-    {
-        // Obtener índices de los 3 vértices del triángulo
-        unsigned int idx0 = indices[i];
-        unsigned int idx1 = indices[i + 1];
-        unsigned int idx2 = indices[i + 2];
-
-        // Asegurarse de que los índices son válidos
-        if (idx0 >= vertices.size() ||
-            idx1 >= vertices.size() ||
-            idx2 >= vertices.size())
-            continue;
-
-        // CORREGIDO: Extraer posiciones directamente de MeshVertex
-        glm::vec3 v0 = vertices[idx0].Position;
-        glm::vec3 v1 = vertices[idx1].Position;
-        glm::vec3 v2 = vertices[idx2].Position;
-
-        // Algoritmo de intersección Möller-Trumbore
-        const float EPSILON = 1e-8f;
-
-        glm::vec3 edge1 = v1 - v0;
-        glm::vec3 edge2 = v2 - v0;
-        glm::vec3 h = glm::cross(rayLocal.direction, edge2);
-        float a = glm::dot(edge1, h);
-
-        // Si a está cerca de 0, el rayo es paralelo al triángulo
-        if (a > -EPSILON && a < EPSILON)
-            continue;
-
-        float f = 1.0f / a;
-        glm::vec3 s = rayLocal.origin - v0;
-        float u = f * glm::dot(s, h);
-
-        if (u < 0.0f || u > 1.0f)
-            continue;
-
-        glm::vec3 q = glm::cross(s, edge1);
-        float v = f * glm::dot(rayLocal.direction, q);
-
-        if (v < 0.0f || u + v > 1.0f)
-            continue;
-
-        // Calcular t para encontrar el punto de intersección
-        float t = f * glm::dot(edge2, q);
-
-        // Solo aceptar intersecciones hacia adelante (t > 0) y más cercanas
-        if (t > EPSILON && t < closestDist)
-        {
-            closestDist = t;
-            hitPoint = rayLocal.GetPoint(t);
-            anyHit = true;
-        }
-    }
-
-    return anyHit;
+    aabb = newAABB;
+    hasAABB = true;
 }
 
-bool GameObject::IntersectRay(const Ray& ray, RayHit& outHit)
+bool GameObject::IntersectRay(const Ray& ray, RayHit& hit)
 {
-    // 1. TEST CONTRA AABB
-    glm::vec3 invDir = 1.0f / ray.direction;
-    glm::vec3 t0 = (globalAABB.min - ray.origin) * invDir;
-    glm::vec3 t1 = (globalAABB.max - ray.origin) * invDir;
+    if (!hasAABB || !active)
+    {
+        return false;
+    }
 
-    glm::vec3 tmin = glm::min(t0, t1);
-    glm::vec3 tmax = glm::max(t0, t1);
+    glm::vec3 tMin = (aabb.min - ray.origin) / ray.direction;
+    glm::vec3 tMax = (aabb.max - ray.origin) / ray.direction;
 
-    float tNear = glm::max(glm::max(tmin.x, tmin.y), tmin.z);
-    float tFar = glm::min(glm::min(tmax.x, tmax.y), tmax.z);
+    glm::vec3 t1 = glm::min(tMin, tMax);
+    glm::vec3 t2 = glm::max(tMin, tMax);
 
-    // Si no intersecta el AABB, salir
+    float tNear = glm::max(glm::max(t1.x, t1.y), t1.z);
+    float tFar = glm::min(glm::min(t2.x, t2.y), t2.z);
+
     if (tNear > tFar || tFar < 0.0f)
-        return false;
-
-    // 2. SI INTERSECTA AABB, TEST CONTRA TRIÁNGULOS
-    ComponentMesh* mesh = GetComponent<ComponentMesh>();
-    if (!mesh)
-        return false;
-
-    ComponentTransform* transform = GetComponent<ComponentTransform>();
-    if (!transform)
-        return false;
-
-    // 3. TRANSFORMAR RAY A ESPACIO LOCAL
-    glm::mat4 worldMatrix = transform->GetGlobalMatrix();
-    glm::mat4 invWorld = glm::inverse(worldMatrix);
-
-    glm::vec3 localOrigin = glm::vec3(invWorld * glm::vec4(ray.origin, 1.0f));
-    glm::vec3 localDirection = glm::vec3(invWorld * glm::vec4(ray.direction, 0.0f));
-    Ray localRay(localOrigin, localDirection);
-
-    // 4. OBTENER DATOS DEL MESH
-    const std::vector<float>& vertices = mesh->GetVertices();
-    const std::vector<unsigned int>& indices = mesh->GetIndices();
-
-    if (vertices.empty() || indices.empty())
-        return false;
-
-    // 5. TEST CONTRA CADA TRIÁNGULO
-    // Formato: [x, y, z, nx, ny, nz, u, v] = 8 floats por vértice
-    const size_t VERTEX_STRIDE = 8;
-
-    float closestDistance = FLT_MAX;
-    bool foundHit = false;
-
-    for (size_t i = 0; i < indices.size(); i += 3)
     {
-        unsigned int idx0 = indices[i];
-        unsigned int idx1 = indices[i + 1];
-        unsigned int idx2 = indices[i + 2];
-
-        // Obtener posiciones de los vértices del triángulo
-        size_t offset0 = idx0 * VERTEX_STRIDE;
-        size_t offset1 = idx1 * VERTEX_STRIDE;
-        size_t offset2 = idx2 * VERTEX_STRIDE;
-
-        glm::vec3 v0(vertices[offset0], vertices[offset0 + 1], vertices[offset0 + 2]);
-        glm::vec3 v1(vertices[offset1], vertices[offset1 + 1], vertices[offset1 + 2]);
-        glm::vec3 v2(vertices[offset2], vertices[offset2 + 1], vertices[offset2 + 2]);
-
-        // ALGORITMO MÖLLER-TRUMBORE para intersección ray-triángulo
-        glm::vec3 edge1 = v1 - v0;
-        glm::vec3 edge2 = v2 - v0;
-        glm::vec3 h = glm::cross(localRay.direction, edge2);
-        float a = glm::dot(edge1, h);
-
-        // Rayo paralelo al triángulo
-        if (a > -0.00001f && a < 0.00001f)
-            continue;
-
-        float f = 1.0f / a;
-        glm::vec3 s = localRay.origin - v0;
-        float u = f * glm::dot(s, h);
-
-        if (u < 0.0f || u > 1.0f)
-            continue;
-
-        glm::vec3 q = glm::cross(s, edge1);
-        float v = f * glm::dot(localRay.direction, q);
-
-        if (v < 0.0f || u + v > 1.0f)
-            continue;
-
-        // Calcular distancia
-        float t = f * glm::dot(edge2, q);
-
-        if (t > 0.00001f && t < closestDistance)
-        {
-            closestDistance = t;
-            foundHit = true;
-        }
+        return false;
     }
 
-    // 6. LLENAR RESULTADO
-    if (foundHit)
+    float t = (tNear > 0.0f) ? tNear : tFar;
+
+    if (t < hit.distance)
     {
-        outHit.hit = true;
-        outHit.distance = closestDistance;
-        outHit.point = localRay.GetPoint(closestDistance);
-        outHit.gameObject = this;
+        hit.hit = true;
+        hit.distance = t;
+        hit.point = ray.GetPoint(t);
+        hit.gameObject = this;
         return true;
     }
 
     return false;
+}
+
+// ============================================
+// SERIALIZATION
+// ============================================
+
+nlohmann::json GameObject::Serialize() const
+{
+    nlohmann::json j;
+
+    j["UID"] = uuid.GetValue();
+    j["Name"] = name;
+    j["Active"] = active;
+
+    // Parent UID
+    if (parent)
+    {
+        j["ParentUID"] = parent->GetUUID().GetValue();
+    }
+    else
+    {
+        j["ParentUID"] = 0;
+    }
+
+    // Transform component (siempre existe)
+    ComponentTransform* transform = GetComponent<ComponentTransform>();
+    if (transform)
+    {
+        glm::vec3 pos = transform->GetPosition();
+        glm::vec3 scale = transform->GetScale();
+        glm::quat rot = transform->GetRotation();
+
+        j["Translation"] = { pos.x, pos.y, pos.z };
+        j["Scale"] = { scale.x, scale.y, scale.z };
+        j["Rotation"] = { rot.w, rot.x, rot.y, rot.z };
+    }
+
+    // Components array
+    nlohmann::json componentsArray = nlohmann::json::array();
+
+    for (Component* comp : components)
+    {
+        if (!comp) continue;
+
+        nlohmann::json compJson;
+
+        if (comp->GetType() == ComponentType::MESH)
+        {
+            compJson["Type"] = 0;
+            compJson["Path"] = "Library/Meshes/mesh_placeholder.mesh";
+        }
+        else if (comp->GetType() == ComponentType::MATERIAL)
+        {
+            ComponentMaterial* mat = static_cast<ComponentMaterial*>(comp);
+            compJson["Type"] = 1;
+            const char* path = mat->GetTexturePath();
+            compJson["Path"] = path ? path : "Library/Textures/default.dds";
+        }
+
+        if (!compJson.empty())
+        {
+            componentsArray.push_back(compJson);
+        }
+    }
+
+    j["Components"] = componentsArray;
+
+    return j;
+}
+
+void GameObject::Deserialize(const nlohmann::json& json)
+{
+    if (json.contains("UID"))
+    {
+        uuid = UUID(json["UID"].get<uint32_t>());
+    }
+
+    if (json.contains("Name"))
+    {
+        name = json["Name"].get<std::string>();
+    }
+
+    if (json.contains("Active"))
+    {
+        active = json["Active"].get<bool>();
+    }
+
+    // Transform
+    ComponentTransform* transform = GetComponent<ComponentTransform>();
+    if (transform)
+    {
+        if (json.contains("Translation"))
+        {
+            auto trans = json["Translation"];
+            transform->SetPosition(glm::vec3(trans[0], trans[1], trans[2]));
+        }
+
+        if (json.contains("Scale"))
+        {
+            auto scale = json["Scale"];
+            transform->SetScale(glm::vec3(scale[0], scale[1], scale[2]));
+        }
+
+        if (json.contains("Rotation"))
+        {
+            auto rot = json["Rotation"];
+            transform->SetRotation(glm::quat(rot[0], rot[1], rot[2], rot[3]));
+        }
+    }
 }
