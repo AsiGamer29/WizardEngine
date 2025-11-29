@@ -1657,6 +1657,7 @@ void ModuleEditor::ShowLoadScenePopup()
                             if (app.moduleScene->LoadScene(fullPath))
                             {
                                 PushEnginePrintf("Scene loaded successfully: %s", sceneName.c_str());
+                                app.moduleScene->UpdateAllAABBs();
                             }
                             else
                             {
@@ -1691,6 +1692,7 @@ void ModuleEditor::ShowLoadScenePopup()
                 if (app.moduleScene->LoadScene(fullPath))
                 {
                     PushEnginePrintf("Scene loaded successfully: %s", filename.c_str());
+                    app.moduleScene->UpdateAllAABBs();
                 }
                 else
                 {

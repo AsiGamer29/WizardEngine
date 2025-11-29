@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <assimp/scene.h>
+#include <nlohmann/json.hpp>
 
 // Estructura de vértice para ComponentMesh
 struct MeshVertex {
@@ -70,4 +71,7 @@ public:
     // Sistema de AABB
     AABB CalculateLocalAABB() const;
     AABB GetLocalAABB();
+
+    nlohmann::json SerializeMesh() const;
+    void DeserializeMesh(const nlohmann::json& meshData);
 };

@@ -304,3 +304,142 @@ const std::vector<float>& ComponentMesh::GetVertices() const
     UpdateFlatVertices();
     return flatVertices;
 }
+
+nlohmann::json ComponentMesh::SerializeMesh() const
+{
+    nlohmann::json meshData;
+
+    // Guardar vertices
+    nlohmann::json verticesArray = nlohmann::json::array();
+    for (const auto& vertex : vertices)
+    {
+        nlohmann::json v;
+        v["Position"] = { vertex.Position.x, vertex.Position.y, vertex.Position.z };
+        v["Normal"] = { vertex.Normal.x, vertex.Normal.y, vertex.Normal.z };
+        v["TexCoords"] = { vertex.TexCoords.x, vertex.TexCoords.y };
+        v["Tangent"] = { vertex.Tangent.x, vertex.Tangent.y, vertex.Tangent.z };
+        v["Bitangent"] = { vertex.Bitangent.x, vertex.Bitangent.y, vertex.Bitangent.z };
+        verticesArray.push_back(v);
+    }
+    meshData["Vertices"] = verticesArray;
+
+    // Guardar indices
+    nlohmann::json indicesArray = nlohmann::json::array();
+    for (unsigned int index : indices)
+    {
+        indicesArray.push_back(index);
+    }
+    meshData["Indices"] = indicesArray;
+
+    // Guardar AABB
+    AABB aabb = localAABB;
+    meshData["AABB_Min"] = { aabb.min.x, aabb.min.y, aabb.min.z };
+    meshData["AABB_Max"] = { aabb.max.x, aabb.max.y, aabb.max.z };
+
+    return meshData;
+}
+
+void ComponentMesh::DeserializeMesh(const nlohmann::json& meshData)
+{
+    if (!meshData.contains("Vertices") || !meshData.contains("Indices"))
+        return;
+
+    vertices.clear();
+    indices.clear();
+
+    // Cargar vertices
+    const auto& verticesArray = meshData["Vertices"];
+    for (const auto& v : verticesArray)
+    {
+        MeshVertex vertex;
+
+        if (v.contains("Position"))
+        {
+            vertex.Position = glm::vec3(
+                v["Position"][0].get<float>(),
+                v["Position"][1].get<float>(),
+                v["Position"][2].get<float>()
+            );
+        }
+
+        if (v.contains("Normal"))
+        {
+            vertex.Normal = glm::vec3(
+                v["Normal"][0].get<float>(),
+                v["Normal"][1].get<float>(),
+                v["Normal"][2].get<float>()
+            );
+        }
+
+        if (v.contains("TexCoords"))
+        {
+            vertex.TexCoords = glm::vec2(
+                v["TexCoords"][0].get<float>(),
+                v["TexCoords"][1].get<float>()
+            );
+        }
+
+        if (v.contains("Tangent"))
+        {
+            vertex.Tangent = glm::vec3(
+                v["Tangent"][0].get<float>(),
+                v["Tangent"][1].get<float>(),
+                v["Tangent"][2].get<float>()
+            );
+        }
+        else
+        {
+            vertex.Tangent = glm::vec3(0.0f);
+        }
+
+        if (v.contains("Bitangent"))
+        {
+            vertex.Bitangent = glm::vec3(
+                v["Bitangent"][0].get<float>(),
+                v["Bitangent"][1].get<float>(),
+                v["Bitangent"][2].get<float>()
+            );
+        }
+        else
+        {
+            vertex.Bitangent = glm::vec3(0.0f);
+        }
+
+        vertices.push_back(vertex);
+    }
+
+    // Cargar indices
+    const auto& indicesArray = meshData["Indices"];
+    for (const auto& idx : indicesArray)
+    {
+        indices.push_back(idx.get<unsigned int>());
+    }
+
+    // Cargar AABB
+    if (meshData.contains("AABB_Min") && meshData.contains("AABB_Max"))
+    {
+        localAABB.min = glm::vec3(
+            meshData["AABB_Min"][0].get<float>(),
+            meshData["AABB_Min"][1].get<float>(),
+            meshData["AABB_Min"][2].get<float>()
+        );
+
+        localAABB.max = glm::vec3(
+            meshData["AABB_Max"][0].get<float>(),
+            meshData["AABB_Max"][1].get<float>(),
+            meshData["AABB_Max"][2].get<float>()
+        );
+
+        aabbDirty = false;
+    }
+
+    // Marcar flat vertices como dirty para regenerar
+    flatVerticesDirty = true;
+
+    // Actualizar contadores
+    numVertices = vertices.size();
+    numIndices = indices.size();
+
+    // Recrear buffers de OpenGL
+    SetupMesh();
+}

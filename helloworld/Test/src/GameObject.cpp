@@ -3,6 +3,7 @@
 #include "ComponentMesh.h"
 #include "ComponentMaterial.h"
 #include "AABB.h"
+#include "Texture.h"
 #include "Ray.h"
 #include <algorithm>
 #include <nlohmann/json.hpp>
@@ -258,15 +259,24 @@ nlohmann::json GameObject::Serialize() const
 
         if (comp->GetType() == ComponentType::MESH)
         {
-            compJson["Type"] = 0;
-            compJson["Path"] = "Library/Meshes/mesh_placeholder.mesh";
+            ComponentMesh* mesh = static_cast<ComponentMesh*>(comp);
+            compJson["Type"] = "Mesh";
+            compJson["MeshData"] = mesh->SerializeMesh();
         }
         else if (comp->GetType() == ComponentType::MATERIAL)
         {
             ComponentMaterial* mat = static_cast<ComponentMaterial*>(comp);
-            compJson["Type"] = 1;
+            compJson["Type"] = "Material";
+
             const char* path = mat->GetTexturePath();
-            compJson["Path"] = path ? path : "Library/Textures/default.dds";
+            compJson["TexturePath"] = path ? path : "";
+            compJson["Width"] = mat->GetWidth();
+            compJson["Height"] = mat->GetHeight();
+
+            // Guardar propiedades de alpha
+            compJson["AlphaMode"] = (int)mat->GetAlphaMode();
+            compJson["AlphaCutoff"] = mat->GetAlphaCutoff();
+            compJson["BlendMode"] = (int)mat->GetBlendMode();
         }
 
         if (!compJson.empty())
@@ -317,6 +327,80 @@ void GameObject::Deserialize(const nlohmann::json& json)
         {
             auto rot = json["Rotation"];
             transform->SetRotation(glm::quat(rot[0], rot[1], rot[2], rot[3]));
+        }
+    }
+
+    // Components
+    if (json.contains("Components"))
+    {
+        const auto& componentsArray = json["Components"];
+
+        for (const auto& compJson : componentsArray)
+        {
+            if (!compJson.contains("Type")) continue;
+
+            std::string type = compJson["Type"].get<std::string>();
+
+            if (type == "Mesh")
+            {
+                // Verificar si ya tiene mesh component
+                ComponentMesh* mesh = GetComponent<ComponentMesh>();
+                if (!mesh)
+                {
+                    mesh = static_cast<ComponentMesh*>(
+                        CreateComponent(ComponentType::MESH)
+                        );
+                }
+
+                if (mesh && compJson.contains("MeshData"))
+                {
+                    mesh->DeserializeMesh(compJson["MeshData"]);
+                }
+            }
+            else if (type == "Material")
+            {
+                // Verificar si ya tiene material component
+                ComponentMaterial* mat = GetComponent<ComponentMaterial>();
+                if (!mat)
+                {
+                    mat = static_cast<ComponentMaterial*>(
+                        CreateComponent(ComponentType::MATERIAL)
+                        );
+                }
+
+                if (mat && compJson.contains("TexturePath"))
+                {
+                    std::string texPath = compJson["TexturePath"].get<std::string>();
+
+                    // Solo cargar si hay una ruta valida
+                    if (!texPath.empty() && texPath != "checkerboard_default")
+                    {
+                        mat->LoadTexture(texPath.c_str());
+                    }
+                    else
+                    {
+                        // Cargar textura por defecto (checkerboard)
+                        GLuint checkerTex = Texture::CreateCheckerboardTexture(512, 512, 32);
+                        mat->SetTexture(checkerTex, "checkerboard_default", 3);
+                    }
+
+                    // Restaurar propiedades de alpha
+                    if (compJson.contains("AlphaMode"))
+                    {
+                        mat->SetAlphaMode((AlphaMode)compJson["AlphaMode"].get<int>());
+                    }
+
+                    if (compJson.contains("AlphaCutoff"))
+                    {
+                        mat->SetAlphaCutoff(compJson["AlphaCutoff"].get<float>());
+                    }
+
+                    if (compJson.contains("BlendMode"))
+                    {
+                        mat->SetBlendMode((BlendMode)compJson["BlendMode"].get<int>());
+                    }
+                }
+            }
         }
     }
 }
