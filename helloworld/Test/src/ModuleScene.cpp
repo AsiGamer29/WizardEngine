@@ -137,28 +137,34 @@ void ModuleScene::DestroyGameObject(GameObject* gameObject)
     delete gameObject;
 }
 
-
-
 void ModuleScene::ClearScene()
 {
-    std::cout << "[ModuleScene] Clearing scene..." << std::endl;
+    SetSelectedGameObject(nullptr);
 
-    // Limpiar selección
-    selectedGameObject = nullptr;
+    // Crear una copia del vector para evitar problemas de iteracion
+    std::vector<GameObject*> objectsToDelete = allGameObjects;
+    allGameObjects.clear();
+    root = nullptr;
 
-    // SOLUCIÓN: Solo eliminar el root
-    // Su destructor eliminará recursivamente todos sus hijos
-    if (root)
+    // Primero: romper todas las relaciones
+    for (GameObject* go : objectsToDelete)
     {
-        std::cout << "[ModuleScene] Deleting root (will cascade to all children)..." << std::endl;
-        delete root;
-        root = nullptr;
+        if (go)
+        {
+            go->ClearHierarchyReferences();
+        }
     }
 
-    // Limpiar la lista (los punteros ya son inválidos)
-    allGameObjects.clear();
+    // Segundo: eliminar todos los objetos
+    for (GameObject* go : objectsToDelete)
+    {
+        if (go)
+        {
+            delete go;
+        }
+    }
 
-    std::cout << "[ModuleScene] Scene cleared successfully" << std::endl;
+    ModuleEditor::PushEngineLog("Scene cleared");
 }
 
 void ModuleScene::LoadModel(const char* path)
@@ -342,28 +348,41 @@ void ModuleScene::CollectRaycastCandidates(GameObject* go, const Ray& ray, std::
 bool ModuleScene::SaveScene(const std::string& filepath)
 {
     nlohmann::json sceneJson;
-    sceneJson["GameObjects"] = nlohmann::json::array();
+    nlohmann::json gameObjectsArray = nlohmann::json::array();
 
+    // Serializar TODOS los GameObjects (incluyendo el Root)
     for (GameObject* go : allGameObjects)
     {
         if (go)
         {
-            sceneJson["GameObjects"].push_back(go->Serialize());
+            gameObjectsArray.push_back(go->Serialize());
         }
     }
 
+    sceneJson["GameObjects"] = gameObjectsArray;
+
+    // Guardar a archivo
     std::ofstream file(filepath);
     if (!file.is_open())
     {
-        ModuleEditor::PushEnginePrintf("ERROR: Could not save scene to %s", filepath.c_str());
+        ModuleEditor::PushEnginePrintf("ERROR: Cannot create file: %s", filepath.c_str());
         return false;
     }
 
-    file << sceneJson.dump(4);
-    file.close();
+    try
+    {
+        file << sceneJson.dump(4);  // Pretty print con indentacion
+    }
+    catch (const std::exception& e)
+    {
+        ModuleEditor::PushEnginePrintf("ERROR: Failed to write JSON: %s", e.what());
+        file.close();
+        return false;
+    }
 
-    currentScenePath = filepath;
-    ModuleEditor::PushEnginePrintf("Scene saved: %s (%zu objects)", filepath.c_str(), allGameObjects.size());
+    file.close();
+    ModuleEditor::PushEnginePrintf("Scene saved: %s (%zu GameObjects)",
+        filepath.c_str(), allGameObjects.size());
 
     return true;
 }
@@ -373,7 +392,7 @@ bool ModuleScene::LoadScene(const std::string& filepath)
     std::ifstream file(filepath);
     if (!file.is_open())
     {
-        ModuleEditor::PushEnginePrintf("ERROR: Could not open scene file: %s", filepath.c_str());
+        ModuleEditor::PushEnginePrintf("ERROR: Cannot open scene file: %s", filepath.c_str());
         return false;
     }
 
@@ -384,60 +403,105 @@ bool ModuleScene::LoadScene(const std::string& filepath)
     }
     catch (const std::exception& e)
     {
-        ModuleEditor::PushEnginePrintf("ERROR: Failed to parse scene JSON: %s", e.what());
+        ModuleEditor::PushEnginePrintf("ERROR: Failed to parse JSON: %s", e.what());
         file.close();
         return false;
     }
     file.close();
 
-
+    // PASO 0: Limpiar escena actual (incluyendo el Root)
     ClearScene();
 
-    // Crear root nuevo
-    root = CreateGameObject("Root", nullptr);
+    // NO crear un nuevo Root aqui
 
-    std::map<uint32_t, GameObject*> uidMap;
-    std::map<GameObject*, uint32_t> parentMap;
-
-    if (sceneJson.contains("GameObjects"))
+    if (!sceneJson.contains("GameObjects") || !sceneJson["GameObjects"].is_array())
     {
-        for (const auto& goJson : sceneJson["GameObjects"])
+        ModuleEditor::PushEngineLog("ERROR: Scene file has no GameObjects array");
+        return false;
+    }
+
+    const auto& gameObjectsArray = sceneJson["GameObjects"];
+
+    // PASO 1: Crear todos los GameObjects y mapear UIDs
+    std::map<uint32_t, GameObject*> uidToGameObject;
+    std::map<GameObject*, uint32_t> gameObjectToParentUID;
+
+    for (const auto& goJson : gameObjectsArray)
+    {
+        if (!goJson.contains("UID") || !goJson.contains("Name"))
         {
-            uint32_t uid = goJson["UID"].get<uint32_t>();
-            std::string name = goJson["Name"].get<std::string>();
+            ModuleEditor::PushEngineLog("WARNING: GameObject missing UID or Name, skipping");
+            continue;
+        }
 
-            GameObject* go = CreateGameObject(name.c_str(), nullptr);
-            go->SetUUID(UUID(uid));
-            go->Deserialize(goJson);
+        uint32_t uid = goJson["UID"].get<uint32_t>();
+        std::string name = goJson["Name"].get<std::string>();
 
-            uidMap[uid] = go;
+        // Crear GameObject SIN padre (temporalmente)
+        GameObject* newGO = new GameObject(name.c_str(), nullptr);
+        newGO->SetUUID(UUID(uid));
 
-            if (goJson.contains("ParentUID"))
+        // Deserializar componentes y propiedades
+        newGO->Deserialize(goJson);
+
+        // Guardar en el mapa
+        uidToGameObject[uid] = newGO;
+        allGameObjects.push_back(newGO);
+
+        // Guardar UID del padre para la segunda pasada
+        if (goJson.contains("ParentUID"))
+        {
+            uint32_t parentUID = goJson["ParentUID"].get<uint32_t>();
+            if (parentUID != 0)
             {
-                uint32_t parentUID = goJson["ParentUID"].get<uint32_t>();
-                if (parentUID != 0)
-                {
-                    parentMap[go] = parentUID;
-                }
+                gameObjectToParentUID[newGO] = parentUID;
             }
         }
     }
 
-    for (const auto& pair : parentMap)
+    // PASO 2: Restaurar jerarquia padre-hijo
+    GameObject* newRoot = nullptr;
+
+    for (const auto& pair : gameObjectToParentUID)
     {
         GameObject* child = pair.first;
         uint32_t parentUID = pair.second;
 
-        if (uidMap.find(parentUID) != uidMap.end())
+        auto it = uidToGameObject.find(parentUID);
+        if (it != uidToGameObject.end())
         {
-            GameObject* parent = uidMap[parentUID];
+            GameObject* parent = it->second;
             child->SetParent(parent);
+        }
+        else
+        {
+            ModuleEditor::PushEnginePrintf("WARNING: Parent UID %u not found for %s",
+                parentUID, child->GetName());
         }
     }
 
-    UpdateAllAABBs();
-    currentScenePath = filepath;
-    ModuleEditor::PushEnginePrintf("Scene loaded: %s (%zu objects)", filepath.c_str(), allGameObjects.size());
+    // PASO 3: Encontrar el objeto raiz (el que no tiene padre)
+    for (GameObject* go : allGameObjects)
+    {
+        if (go->GetParent() == nullptr)
+        {
+            newRoot = go;
+            break;
+        }
+    }
+
+    // Si no hay root en la escena, crear uno vacio
+    if (!newRoot)
+    {
+        ModuleEditor::PushEngineLog("WARNING: No root found in scene, creating empty root");
+        newRoot = new GameObject("Scene Root", nullptr);
+        allGameObjects.push_back(newRoot);
+    }
+
+    root = newRoot;
+
+    ModuleEditor::PushEnginePrintf("Scene loaded: %s (%zu GameObjects)",
+        filepath.c_str(), allGameObjects.size());
 
     return true;
 }

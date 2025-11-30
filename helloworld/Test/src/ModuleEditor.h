@@ -47,11 +47,13 @@ private:
     char scene_filename_buffer[256] = "MyScene.json";
     std::string scenes_directory = "Assets/Scenes/";
 
-    // NUEVO: Lista de escenas disponibles
     std::vector<std::string> available_scenes;
     void RefreshSceneList();
     void ShowSaveScenePopup();
     void ShowLoadScenePopup();
+    void NewScene();
+    void OpenSaveSceneDialog();
+    void OpenLoadSceneDialog();
 
     bool inspector_show_checkerboard = false;
     unsigned int inspectorCheckerTex = 0;

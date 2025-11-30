@@ -401,12 +401,6 @@ bool ModuleEditor::PreUpdate()
     ImGui::NewFrame();
     ImGuizmo::BeginFrame();
 
-    if (show_save_scene_popup)
-        ShowSaveScenePopup();
-
-    if (show_load_scene_popup)
-        ShowLoadScenePopup();
-
     return true;
 }
 
@@ -417,41 +411,50 @@ bool ModuleEditor::Update()
     fps_pos = (fps_pos + 1) % FPS_HISTORY_SIZE;
     fps_count = std::min(fps_count + 1, FPS_HISTORY_SIZE);
 
+    // ===== KEYBOARD SHORTCUTS =====
+    ImGuiIO& io = ImGui::GetIO();
+
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))
+    {
+        OpenSaveSceneDialog();
+    }
+
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false))
+    {
+        OpenLoadSceneDialog();
+    }
+
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_N, false))
+    {
+        NewScene();
+    }
+
+    if (show_save_scene_popup)
+        ShowSaveScenePopup();
+
+    if (show_load_scene_popup)
+        ShowLoadScenePopup();
+
     // Main menu bar
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::BeginMenu("File"))
         {
-            // NUEVO: Save Scene
             if (ImGui::MenuItem("Save Scene", "Ctrl+S"))
             {
-                show_save_scene_popup = true;
-                PushEngineLog("Opening Save Scene dialog...");
+                OpenSaveSceneDialog();
             }
 
-            // NUEVO: Load Scene
             if (ImGui::MenuItem("Load Scene", "Ctrl+O"))
             {
-                RefreshSceneList();
-                show_load_scene_popup = true;
-                PushEngineLog("Opening Load Scene dialog...");
+                OpenLoadSceneDialog();
             }
 
             ImGui::Separator();
 
             if (ImGui::MenuItem("New Scene", "Ctrl+N"))
             {
-                auto& app = Application::GetInstance();
-                if (app.moduleScene)
-                {
-                    app.moduleScene->ClearScene();
-
-                    // Recrear root
-                    GameObject* newRoot = app.moduleScene->CreateGameObject("Scene Root", nullptr);
-                    app.moduleScene->SetRoot(newRoot);
-
-                    PushEngineLog("New scene created");
-                }
+                NewScene();
             }
 
             ImGui::Separator();
@@ -1723,4 +1726,29 @@ void ModuleEditor::ShowLoadScenePopup()
 
         ImGui::EndPopup();
     }
+}
+
+void ModuleEditor::NewScene()
+{
+    auto& app = Application::GetInstance();
+    if (app.moduleScene)
+    {
+        app.moduleScene->ClearScene();
+        GameObject* newRoot = app.moduleScene->CreateGameObject("Scene Root", nullptr);
+        app.moduleScene->SetRoot(newRoot);
+        PushEngineLog("New scene created");
+    }
+}
+
+void ModuleEditor::OpenSaveSceneDialog()
+{
+    show_save_scene_popup = true;
+    PushEngineLog("Opening Save Scene dialog...");
+}
+
+void ModuleEditor::OpenLoadSceneDialog()
+{
+    RefreshSceneList();
+    show_load_scene_popup = true;
+    PushEngineLog("Opening Load Scene dialog...");
 }

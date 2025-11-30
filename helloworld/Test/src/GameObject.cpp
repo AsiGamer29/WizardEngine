@@ -225,14 +225,14 @@ nlohmann::json GameObject::Serialize() const
     j["Name"] = name;
     j["Active"] = active;
 
-    // Parent UID
+    // Parent UID - CRITICO: guardar 0 si no tiene padre
     if (parent)
     {
         j["ParentUID"] = parent->GetUUID().GetValue();
     }
     else
     {
-        j["ParentUID"] = 0;
+        j["ParentUID"] = 0;  // 0 significa "es root"
     }
 
     // Transform component (siempre existe)
@@ -403,4 +403,10 @@ void GameObject::Deserialize(const nlohmann::json& json)
             }
         }
     }
+}
+
+void GameObject::ClearHierarchyReferences()
+{
+    parent = nullptr;
+    children.clear();
 }

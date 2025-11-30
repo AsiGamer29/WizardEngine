@@ -64,6 +64,7 @@ public:
     // Serialization
     nlohmann::json Serialize() const;
     void Deserialize(const nlohmann::json& json);
+    void ClearHierarchyReferences();
 
     void Update();
 
