@@ -302,12 +302,19 @@ void ModuleScene::LoadFromAssimp(const aiScene* scene, const aiNode* node, GameO
     {
         LoadFromAssimp(scene, node->mChildren[i], gameObject, basePath);
     }
+
+    gameObject->UpdateAABB();
 }
 
 void ModuleScene::UpdateAllAABBs()
 {
-    if (root)
-        root->UpdateAABB();
+    for (GameObject* go : allGameObjects)
+    {
+        if (go)
+        {
+            go->UpdateAABB();
+        }
+    }
 }
 
 GameObject* ModuleScene::PerformRaycast(const Ray& ray)
@@ -333,12 +340,17 @@ void ModuleScene::CollectRaycastCandidates(GameObject* go, const Ray& ray, std::
     if (!go || !go->IsActive())
         return;
 
-    RayHit hit;
-    if (go->IntersectRay(ray, hit))
+    // CRITICO: Solo hacer raycast si tiene AABB valido
+    if (go->HasAABB())
     {
-        candidates.push_back(hit);
+        RayHit hit;
+        if (go->IntersectRay(ray, hit))
+        {
+            candidates.push_back(hit);
+        }
     }
 
+    // Recursivamente procesar hijos
     for (GameObject* child : go->GetChildren())
     {
         CollectRaycastCandidates(child, ray, candidates);
@@ -499,6 +511,8 @@ bool ModuleScene::LoadScene(const std::string& filepath)
     }
 
     root = newRoot;
+
+    UpdateAllAABBs();
 
     ModuleEditor::PushEnginePrintf("Scene loaded: %s (%zu GameObjects)",
         filepath.c_str(), allGameObjects.size());

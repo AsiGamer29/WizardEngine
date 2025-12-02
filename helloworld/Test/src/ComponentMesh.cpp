@@ -240,6 +240,7 @@ void ComponentMesh::LoadFromGeometry(MeshGeometry* geom)
 
     // Configurar buffers de OpenGL
     SetupMesh();
+    CalculateAABB();
 
     std::cout << "[ComponentMesh] Loaded procedural geometry: "
         << numVertices << " vertices, "
@@ -442,4 +443,26 @@ void ComponentMesh::DeserializeMesh(const nlohmann::json& meshData)
 
     // Recrear buffers de OpenGL
     SetupMesh();
+}
+
+void ComponentMesh::CalculateAABB()
+{
+    if (vertices.empty())
+    {
+        localAABB.min = glm::vec3(0.0f);
+        localAABB.max = glm::vec3(0.0f);
+        return;
+    }
+
+    glm::vec3 min = vertices[0].Position;
+    glm::vec3 max = vertices[0].Position;
+
+    for (const auto& vertex : vertices)
+    {
+        min = glm::min(min, vertex.Position);
+        max = glm::max(max, vertex.Position);
+    }
+
+    localAABB.min = min;
+    localAABB.max = max;
 }

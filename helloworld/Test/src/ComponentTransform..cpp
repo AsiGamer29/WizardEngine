@@ -76,8 +76,12 @@ void ComponentTransform::MarkGlobalDirty()
 {
     globalMatrixDirty = true;
     PropagateGlobalDirtyToChildren();
-}
 
+    if (owner)
+    {
+        owner->UpdateAABB();
+    }
+}
 void ComponentTransform::PropagateGlobalDirtyToChildren()
 {
     if (!owner) return;

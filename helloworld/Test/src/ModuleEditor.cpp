@@ -114,6 +114,7 @@ static void CreateGeometryGameObject(const std::string& geometryType) {
 
         meshComp->LoadFromGeometry(&geom);
         ModuleEditor::PushEnginePrintf("Mesh loaded for: %s", objectName.c_str());
+        gameObject->UpdateAABB();
     }
     else {
         ModuleEditor::PushEngineLog("ERROR: Failed to create Mesh component");

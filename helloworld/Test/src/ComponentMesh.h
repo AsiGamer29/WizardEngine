@@ -54,6 +54,8 @@ public:
     // Cargar desde geometría procedural
     void LoadFromGeometry(MeshGeometry* geom);
 
+    void CalculateAABB();
+
     // Renderizar
     void Draw();
 
