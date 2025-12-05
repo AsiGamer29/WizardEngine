@@ -33,6 +33,8 @@ public:
     int sceneFBWidth = 1280;
     int sceneFBHeight = 720;
 
+    bool show_viewport_window = true;
+
 private:
     bool show_demo_window = false;
     bool show_test_window = false;

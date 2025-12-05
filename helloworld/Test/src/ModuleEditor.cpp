@@ -293,6 +293,10 @@ bool ModuleEditor::Start()
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
+    show_viewport_window = true;
+    show_hierarchy_window = true;
+    show_inspector_window = true;
+
     ImGui::StyleColorsDark();
 
     auto& app = Application::GetInstance();
@@ -412,6 +416,34 @@ bool ModuleEditor::Update()
     fps_pos = (fps_pos + 1) % FPS_HISTORY_SIZE;
     fps_count = std::min(fps_count + 1, FPS_HISTORY_SIZE);
 
+    // ----- Dockspace host so windows can dock into the main viewport -----
+    {
+        ImGuiViewport* main_viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(main_viewport->WorkPos);
+        ImGui::SetNextWindowSize(main_viewport->WorkSize);
+        ImGui::SetNextWindowViewport(main_viewport->ID);
+
+        ImGuiWindowFlags host_flags = ImGuiWindowFlags_NoTitleBar
+            | ImGuiWindowFlags_NoCollapse
+            | ImGuiWindowFlags_NoResize
+            | ImGuiWindowFlags_NoMove
+            | ImGuiWindowFlags_NoBringToFrontOnFocus
+            | ImGuiWindowFlags_NoNavFocus
+            | ImGuiWindowFlags_NoDecoration;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::Begin("MainDockSpaceWindow", nullptr, host_flags);
+        ImGui::PopStyleVar(2);
+
+        ImGuiID dockspace_id = ImGui::GetID("MainDockSpace");
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+
+        ImGui::End();
+    }
+
+
+
     // ===== KEYBOARD SHORTCUTS =====
     ImGuiIO& io = ImGui::GetIO();
 
@@ -478,11 +510,13 @@ bool ModuleEditor::Update()
             bool prev_console = show_console_window;
             bool prev_hier = show_hierarchy_window;
             bool prev_inspector = show_inspector_window;
+            bool prev_viewport = show_viewport_window;
 
             ImGui::MenuItem("About", NULL, &show_about_window);
             ImGui::MenuItem("Console", NULL, &show_console_window);
             ImGui::MenuItem("Hierarchy", NULL, &show_hierarchy_window);
             ImGui::MenuItem("Inspector", NULL, &show_inspector_window);
+            ImGui::MenuItem("Viewport", NULL, &show_viewport_window);
 
             if (prev_about != show_about_window)
                 PushEnginePrintf("About Window %s", show_about_window ? "opened" : "closed");
@@ -684,152 +718,137 @@ bool ModuleEditor::Update()
         ImGui::End();
     }
 
-    // ===== CALCULAR DIMENSIONES ESTILO UNITY =====
-    ImGuiViewport* mainViewport = ImGui::GetMainViewport();
-
-    float hierWidth = 260.0f;      // Ancho de Hierarchy (izquierda)
-    float inspWidth = 320.0f;      // Ancho de Inspector (derecha)
-    float consoleHeight = 200.0f;  // Altura de la consola (abajo)
-
-    // El viewport 3D está en el centro, entre hierarchy e inspector
-    float viewportWidth = mainViewport->WorkSize.x - hierWidth - inspWidth;
-    float viewportHeight = mainViewport->WorkSize.y - consoleHeight;
-
-    // ===== REDIMENSIONAR FRAMEBUFFER SI ES NECESARIO =====
-    int newFBWidth = (int)viewportWidth;
-    int newFBHeight = (int)viewportHeight;
-
-    if (newFBWidth != sceneFBWidth || newFBHeight != sceneFBHeight)
+    // ===== VIEWPORT WINDOW - AHORA ES UNA PESTAÑA INDEPENDIENTE =====
+    if (show_viewport_window)
     {
-        sceneFBWidth = std::max(1, newFBWidth);
-        sceneFBHeight = std::max(1, newFBHeight);
+        // Dock the viewport into main dockspace on first use
+        ImGui::SetNextWindowDockID(ImGui::GetID("MainDockSpace"), ImGuiCond_FirstUseEver);
 
-        // Redimensionar textura
-        glBindTexture(GL_TEXTURE_2D, sceneTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, sceneFBWidth, sceneFBHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
-        // Redimensionar depth/stencil buffer
-        glBindRenderbuffer(GL_RENDERBUFFER, sceneRBO);
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, sceneFBWidth, sceneFBHeight);
-    }
-
-    // ===== RENDERIZAR ESCENA AL FRAMEBUFFER =====
-    if (sceneFramebuffer != 0 && Application::GetInstance().moduleScene)
-    {
-        glBindFramebuffer(GL_FRAMEBUFFER, sceneFramebuffer);
-        glViewport(0, 0, sceneFBWidth, sceneFBHeight);
-        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        // Renderizar todos los GameObjects
-        Application::GetInstance().moduleScene->RenderScene();
-
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    }
-
-    // ===== MOSTRAR TEXTURA DEL FRAMEBUFFER EN IMGUI (Centro, entre Hierarchy e Inspector) =====
-    ImVec2 viewportWindowPos = ImVec2(mainViewport->WorkPos.x + hierWidth, mainViewport->WorkPos.y);
-    ImVec2 viewportWindowSize = ImVec2(viewportWidth, viewportHeight);
-
-    ImGui::SetNextWindowPos(viewportWindowPos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(viewportWindowSize, ImGuiCond_Always);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-
-    ImGuiWindowFlags viewportFlags =
-        ImGuiWindowFlags_NoTitleBar |
-        ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_NoCollapse |
-        ImGuiWindowFlags_NoScrollbar |
-        ImGuiWindowFlags_NoScrollWithMouse |
-        ImGuiWindowFlags_NoBringToFrontOnFocus |
-        ImGuiWindowFlags_NoFocusOnAppearing;
-
-    ImGui::Begin("3D Viewport", nullptr, viewportFlags);
-
-    // CRÍTICO: Actualizar tracking del viewport PRIMERO
-    viewportPos = ImGui::GetWindowPos();
-    viewportSize = ImGui::GetContentRegionAvail();
-
-    // Obtener posición donde dibujar
-    ImVec2 imagePos = ImGui::GetCursorScreenPos();
-
-    // Dibujar la textura de la escena usando DrawList (no captura input)
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    draw_list->AddImage(
-        (ImTextureID)(intptr_t)sceneTexture,
-        imagePos,
-        ImVec2(imagePos.x + viewportSize.x, imagePos.y + viewportSize.y),
-        ImVec2(0, 1),
-        ImVec2(1, 0)
-    );
-
-    // Avanzar el cursor para que ImGui sepa que usamos este espacio
-    ImGui::Dummy(viewportSize);
-
-    // Tracking del mouse
-    bool imageHovered = ImGui::IsItemHovered();
-    bool imageClicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
-    isMouseOverViewport = imageHovered;
-
-    // ===== DIBUJAR GIZMO DENTRO DEL VIEWPORT =====
-    // CRÍTICO: El gizmo se dibuja DESPUÉS de la imagen pero ANTES del mouse picking
-    HandleGizmo();
-
-    // ===== MOUSE PICKING (dentro del viewport) =====
-    // SOLO hacer picking si NO estamos usando el gizmo
-    if (imageClicked && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver())
-    {
-        auto& app = Application::GetInstance();
-
-        if (app.camera && app.moduleScene)
+        if (ImGui::Begin("Scene Viewport", &show_viewport_window))
         {
-            ImVec2 mousePos = ImGui::GetMousePos();
-            float relativeX = mousePos.x - viewportPos.x;
-            float relativeY = mousePos.y - viewportPos.y;
+            // Obtener tamaño disponible en la ventana
+            ImVec2 availableSize = ImGui::GetContentRegionAvail();
 
-            if (relativeX >= 0 && relativeX < viewportSize.x &&
-                relativeY >= 0 && relativeY < viewportSize.y)
+            // CRÍTICO: Actualizar tracking del viewport
+            viewportPos = ImGui::GetCursorScreenPos();
+            viewportSize = availableSize;
+
+            // Redimensionar framebuffer si es necesario
+            int newFBWidth = (int)availableSize.x;
+            int newFBHeight = (int)availableSize.y;
+
+            if (newFBWidth > 0 && newFBHeight > 0 &&
+                (newFBWidth != sceneFBWidth || newFBHeight != sceneFBHeight))
             {
-                Ray pickRay = app.camera->ScreenPointToRay(
-                    relativeX,
-                    relativeY,
-                    (int)viewportSize.x,
-                    (int)viewportSize.y
-                );
+                sceneFBWidth = newFBWidth;
+                sceneFBHeight = newFBHeight;
 
-                app.moduleScene->UpdateAllAABBs();
-                GameObject* pickedObject = app.moduleScene->PerformRaycast(pickRay);
+                // Redimensionar textura
+                glBindTexture(GL_TEXTURE_2D, sceneTexture);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, sceneFBWidth, sceneFBHeight,
+                    0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
 
-                if (pickedObject)
+                // Redimensionar depth/stencil buffer
+                glBindRenderbuffer(GL_RENDERBUFFER, sceneRBO);
+                glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8,
+                    sceneFBWidth, sceneFBHeight);
+            }
+
+            // ===== RENDERIZAR ESCENA AL FRAMEBUFFER =====
+            if (sceneFramebuffer != 0 && Application::GetInstance().moduleScene &&
+                sceneFBWidth > 0 && sceneFBHeight > 0)
+            {
+                glBindFramebuffer(GL_FRAMEBUFFER, sceneFramebuffer);
+                glViewport(0, 0, sceneFBWidth, sceneFBHeight);
+                glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+                // Actualizar aspect ratio de la cámara
+                auto& app = Application::GetInstance();
+                if (app.camera && sceneFBWidth > 0 && sceneFBHeight > 0)
                 {
-                    app.moduleScene->SetSelectedGameObject(pickedObject);
-                    PushEnginePrintf("Picked GameObject: %s", pickedObject->GetName());
+                    float aspect = (float)sceneFBWidth / (float)sceneFBHeight;
+                    app.camera->setProjection(45.0f, aspect, 0.1f, 1000.0f);
                 }
-                else
+
+                // Renderizar escena
+                Application::GetInstance().moduleScene->RenderScene();
+
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            }
+
+            // Dibujar textura en ImGui
+            ImVec2 imagePos = ImGui::GetCursorScreenPos();
+
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            draw_list->AddImage(
+                (ImTextureID)(intptr_t)sceneTexture,
+                imagePos,
+                ImVec2(imagePos.x + availableSize.x, imagePos.y + availableSize.y),
+                ImVec2(0, 1),
+                ImVec2(1, 0)
+            );
+
+            // Avanzar cursor
+            ImGui::Dummy(availableSize);
+
+            // Tracking del mouse
+            bool imageHovered = ImGui::IsItemHovered();
+            bool imageClicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+            isMouseOverViewport = imageHovered;
+
+            // ===== DIBUJAR GIZMO =====
+            HandleGizmo();
+
+            // ===== MOUSE PICKING =====
+            if (imageClicked && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver())
+            {
+                auto& app = Application::GetInstance();
+
+                if (app.camera && app.moduleScene)
                 {
-                    app.moduleScene->SetSelectedGameObject(nullptr);
-                    PushEngineLog("No object picked - selection cleared");
+                    ImVec2 mousePos = ImGui::GetMousePos();
+                    float relativeX = mousePos.x - viewportPos.x;
+                    float relativeY = mousePos.y - viewportPos.y;
+
+                    if (relativeX >= 0 && relativeX < viewportSize.x &&
+                        relativeY >= 0 && relativeY < viewportSize.y)
+                    {
+                        Ray pickRay = app.camera->ScreenPointToRay(
+                            relativeX,
+                            relativeY,
+                            (int)viewportSize.x,
+                            (int)viewportSize.y
+                        );
+
+                        app.moduleScene->UpdateAllAABBs();
+                        GameObject* pickedObject = app.moduleScene->PerformRaycast(pickRay);
+
+                        if (pickedObject)
+                        {
+                            app.moduleScene->SetSelectedGameObject(pickedObject);
+                            PushEnginePrintf("Picked GameObject: %s", pickedObject->GetName());
+                        }
+                        else
+                        {
+                            app.moduleScene->SetSelectedGameObject(nullptr);
+                            PushEngineLog("No object picked - selection cleared");
+                        }
+                    }
                 }
             }
         }
+        ImGui::End();
+        ImGui::PopStyleVar();
     }
 
-    ImGui::End();
-    ImGui::PopStyleVar();
-
-    // Hierarchy window - OCUPA TODA LA ALTURA IZQUIERDA CON JERARQUÍA RECURSIVA
+    // Hierarchy window
     if (show_hierarchy_window)
     {
-        ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImVec2 hierPos = ImVec2(viewport->WorkPos.x, viewport->WorkPos.y);
-        ImVec2 hierSize = ImVec2(hierWidth, viewport->WorkSize.y);
-
-        ImGui::SetNextWindowPos(hierPos, ImGuiCond_Always);
-        ImGui::SetNextWindowSize(hierSize, ImGuiCond_Always);
-        ImGuiWindowFlags hierFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse;
-
-        ImGui::Begin("Hierarchy", NULL, hierFlags);
+        ImGui::SetNextWindowDockID(ImGui::GetID("MainDockSpace"), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Hierarchy", &show_hierarchy_window);
 
         auto& app = Application::GetInstance();
         if (app.moduleScene)
@@ -859,15 +878,8 @@ bool ModuleEditor::Update()
     // Inspector window - OCUPA TODA LA ALTURA DERECHA
     if (show_inspector_window)
     {
-        ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImVec2 inspPos = ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - inspWidth, viewport->WorkPos.y);
-        ImVec2 inspSize = ImVec2(inspWidth, viewport->WorkSize.y);
-
-        ImGui::SetNextWindowPos(inspPos, ImGuiCond_Always);
-        ImGui::SetNextWindowSize(inspSize, ImGuiCond_Always);
-        ImGuiWindowFlags inspFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse;
-
-        ImGui::Begin("Inspector", &show_inspector_window, inspFlags);
+        ImGui::SetNextWindowDockID(ImGui::GetID("MainDockSpace"), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Inspector", &show_inspector_window);
 
         auto& app = Application::GetInstance();
         GameObject* selected = nullptr;
@@ -1120,19 +1132,7 @@ bool ModuleEditor::Update()
     // Console window - PARTE INFERIOR, ENTRE HIERARCHY E INSPECTOR
     if (show_console_window)
     {
-        ImGuiViewport* viewport = ImGui::GetMainViewport();
-
-        // La consola empieza después de hierarchy y termina antes de inspector
-        ImVec2 consolePos = ImVec2(viewport->WorkPos.x + hierWidth,
-            viewport->WorkPos.y + viewport->WorkSize.y - consoleHeight);
-        ImVec2 consoleSize = ImVec2(viewportWidth, consoleHeight);
-
-        ImGui::SetNextWindowPos(consolePos, ImGuiCond_Always);
-        ImGui::SetNextWindowSize(consoleSize, ImGuiCond_Always);
-
-        ImGuiWindowFlags consoleFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse;
-
-        ImGui::Begin("Console", &show_console_window, consoleFlags);
+        ImGui::Begin("Console", &show_console_window);
 
         ImGui::Checkbox("Auto-scroll", &engine_log_auto_scroll);
 
