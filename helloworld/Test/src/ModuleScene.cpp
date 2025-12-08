@@ -1,3 +1,5 @@
+#define GLM_ENABLE_EXPERIMENTAL
+
 #include "ModuleScene.h"
 #include "Application.h"
 #include "GameObject.h"
@@ -7,14 +9,20 @@
 #include "ComponentMaterial.h"
 #include "Texture.h"
 #include "OpenGL.h"
+#include "MeshImporter.h"
+#include "TextureImporter.h"
+#include "ModelImporter.h"
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include <iostream>
+#include <glm/gtx/matrix_decompose.hpp>
 
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <map>
+
+
 
 ModuleScene::ModuleScene()
     : root(nullptr), selectedGameObject(nullptr)
@@ -46,6 +54,12 @@ bool ModuleScene::Start()
 
     allGameObjects.push_back(root);
     std::cout << "[ModuleScene] Root GameObject created with Transform" << std::endl;
+
+    assetManager = new WizardEngine::AssetManager();
+    if (!assetManager->Initialize()) {
+        std::cerr << "[ModuleScene] Failed to initialize AssetManager" << std::endl;
+        return false;
+    }
 
     return true;
 }
@@ -88,8 +102,14 @@ void ModuleScene::RenderScene()
 
 bool ModuleScene::CleanUp()
 {
+    if (assetManager) {
+        delete assetManager;
+        assetManager = nullptr;
+    }
+
     std::cout << "[ModuleScene] Cleaning up..." << std::endl;
     ClearScene();
+
     return true;
 }
 
@@ -518,4 +538,135 @@ bool ModuleScene::LoadScene(const std::string& filepath)
         filepath.c_str(), allGameObjects.size());
 
     return true;
+}
+
+GameObject* ModuleScene::ImportModelFromAssets(const std::string& assetPath) {
+    if (!assetManager) {
+        std::cerr << "[ModuleScene] AssetManager not initialized" << std::endl;
+        return nullptr;
+    }
+
+    std::cout << "[ModuleScene] Importing model from Assets..." << std::endl;
+
+    // Procesar archivo (esto crea los .wzm, .wzt, .wzd)
+    if (!assetManager->ProcessAssetFile(assetPath)) {
+        std::cerr << "[ModuleScene] Failed to process asset: " << assetPath << std::endl;
+        return nullptr;
+    }
+
+    // Obtener ruta del archivo .wzd generado
+    std::string libraryPath = assetManager->GetLibraryPath(assetPath, "wzd");
+    if (libraryPath.empty()) {
+        std::cerr << "[ModuleScene] Failed to get library path" << std::endl;
+        return nullptr;
+    }
+
+    // Cargar desde Library
+    return LoadModelFromLibrary(libraryPath);
+}
+
+GameObject* ModuleScene::LoadModelFromLibrary(const std::string& libraryPath) {
+    std::cout << "[ModuleScene] Loading model from Library..." << std::endl;
+
+    // Cargar metadata del modelo
+    WizardEngine::WizardModelData modelData;
+    if (!WizardEngine::ModelImporter::Load(libraryPath, modelData)) {
+        std::cerr << "[ModuleScene] Failed to load model: " << libraryPath << std::endl;
+        return nullptr;
+    }
+
+    // Crear GameObject root para el modelo
+    std::string modelName = std::filesystem::path(libraryPath).parent_path().filename().string();
+    GameObject* rootObject = CreateGameObject(modelName.c_str(), GetRoot());
+
+    // Crear nodos de jerarquia
+    std::vector<GameObject*> nodeObjects;
+    nodeObjects.resize(modelData.nodes.size());
+
+    for (size_t i = 0; i < modelData.nodes.size(); i++) {
+        const auto& nodeData = modelData.nodes[i];
+
+        GameObject* parent = (nodeData.parentIndex >= 0)
+            ? nodeObjects[nodeData.parentIndex]
+            : rootObject;
+
+        GameObject* nodeObject = CreateGameObject(nodeData.name.c_str(), parent);
+        nodeObjects[i] = nodeObject;
+
+        // Aplicar transformacion
+        ComponentTransform* transform = nodeObject->GetComponent<ComponentTransform>();
+        if (transform) {
+            // Descomponer matriz
+            glm::vec3 scale, translation, skew;
+            glm::vec4 perspective;
+            glm::quat rotation;
+            glm::decompose(nodeData.transformation, scale, rotation, translation, skew, perspective);
+
+            transform->SetPosition(translation);
+            transform->SetRotation(rotation);
+            transform->SetScale(scale);
+        }
+
+        // Cargar meshes asociados a este nodo
+        for (int meshIndex : nodeData.meshIndices) {
+            if (meshIndex < 0 || meshIndex >= modelData.meshes.size()) continue;
+
+            const auto& meshRef = modelData.meshes[meshIndex];
+
+            // Cargar mesh desde .wzm
+            WizardEngine::WizardMeshData meshData;
+            if (!WizardEngine::MeshImporter::Load(meshRef.meshFilepath, meshData)) {
+                std::cerr << "[ModuleScene] Failed to load mesh: " << meshRef.meshFilepath << std::endl;
+                continue;
+            }
+
+            // Crear componente mesh
+            ComponentMesh* meshComp = static_cast<ComponentMesh*>(
+                nodeObject->CreateComponent(ComponentType::MESH)
+                );
+
+            if (meshComp) {
+                // Convertir WizardMeshData a formato del engine
+                meshComp->LoadFromWizardFormat(meshData);
+                nodeObject->UpdateAABB();
+            }
+
+            // Cargar material
+            if (meshRef.materialIndex < modelData.materials.size()) {
+                const auto& matData = modelData.materials[meshRef.materialIndex];
+
+                ComponentMaterial* matComp = static_cast<ComponentMaterial*>(
+                    nodeObject->CreateComponent(ComponentType::MATERIAL)
+                    );
+
+                if (matComp && !matData.diffuseTexture.empty()) {
+                    // Cargar textura desde .wzt
+                    WizardEngine::WizardTextureData texData;
+                    if (WizardEngine::TextureImporter::Load(matData.diffuseTexture, texData)) {
+                        // Crear textura OpenGL
+                        GLuint texID;
+                        glGenTextures(1, &texID);
+                        glBindTexture(GL_TEXTURE_2D, texID);
+
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                            texData.width, texData.height,
+                            0, GL_RGBA, GL_UNSIGNED_BYTE, texData.data.data());
+                        glGenerateMipmap(GL_TEXTURE_2D);
+
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+                        matComp->SetTexture(texID, matData.diffuseTexture.c_str(), texData.channels);
+                    }
+                }
+            }
+        }
+    }
+
+    UpdateAllAABBs();
+
+    std::cout << "[ModuleScene] Model loaded successfully!" << std::endl;
+    return rootObject;
 }

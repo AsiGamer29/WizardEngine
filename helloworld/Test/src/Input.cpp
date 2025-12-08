@@ -142,6 +142,17 @@ bool Input::PreUpdate()
             mouseButtons[i] = KEY_IDLE;
     }
 
+    // Guardar si ImGui capturó el mouse
+    ImGuiIO& io = ImGui::GetIO();
+    mouseOverImGui = io.WantCaptureMouse;
+
+    // Si el viewport no esta hovered, resetear el mouse wheel
+    if (!viewportHovered)
+    {
+        mouseWheelY = 0;
+    }
+    
+
     return true;
 }
 
@@ -163,4 +174,9 @@ KeyState Input::GetMouseButton(int id) const
     if (id < 1 || id > NUM_MOUSE_BUTTONS)
         return KEY_IDLE;
     return mouseButtons[id - 1];
+}
+
+bool Input::IsMouseOverImGui() const
+{
+    return mouseOverImGui;
 }

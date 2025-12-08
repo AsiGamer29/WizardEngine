@@ -1,5 +1,6 @@
 #pragma once
 #include "Module.h"
+#include "AssetManager.h"
 #include "Ray.h"
 #include <vector>
 #include <string>
@@ -56,8 +57,15 @@ public:
     bool LoadScene(const std::string& filepath);
     void SetRoot(GameObject* newRoot) { root = newRoot; }
 
+    GameObject* ImportModelFromAssets(const std::string& assetPath);
+
+    GameObject* LoadModelFromLibrary(const std::string& libraryPath);
+
+    WizardEngine::AssetManager* GetAssetManager() { return assetManager; }
+
 private:
     void LoadFromAssimp(const aiScene* scene, const aiNode* node, GameObject* parent, const std::string& basePath);
     void CollectRaycastCandidates(GameObject* go, const Ray& ray, std::vector<RayHit>& candidates);
     std::string currentScenePath;
+    WizardEngine::AssetManager* assetManager;
 };

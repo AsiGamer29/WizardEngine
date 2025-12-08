@@ -1,6 +1,7 @@
 #pragma once
 #include "BaseComponent.h"
 #include "GeometryGenerator.h"
+#include "MeshImporter.h"
 #include "AABB.h"
 #include <glad/glad.h>
 #include <glm/glm.hpp>
@@ -40,6 +41,7 @@ private:
     void CleanupBuffers();
     void UpdateFlatVertices() const;
 
+
 public:
     ComponentMesh(GameObject* owner);
     ~ComponentMesh();
@@ -53,6 +55,8 @@ public:
 
     // Cargar desde geometría procedural
     void LoadFromGeometry(MeshGeometry* geom);
+    void LoadFromWizardFormat(const WizardEngine::WizardMeshData& meshData);
+
 
     void CalculateAABB();
 

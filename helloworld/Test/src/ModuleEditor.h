@@ -34,6 +34,7 @@ public:
     int sceneFBHeight = 720;
 
     bool show_viewport_window = true;
+    bool IsMouseOverViewport() const { return isMouseOverViewport; }
 
 private:
     bool show_demo_window = false;

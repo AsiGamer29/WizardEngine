@@ -466,3 +466,40 @@ void ComponentMesh::CalculateAABB()
     localAABB.min = min;
     localAABB.max = max;
 }
+
+void ComponentMesh::LoadFromWizardFormat(const WizardEngine::WizardMeshData& meshData)
+{
+    CleanupBuffers();
+
+    vertices.clear();
+    indices.clear();
+
+    vertices.reserve(meshData.vertices.size());
+
+    for (const auto& wv : meshData.vertices)
+    {
+        MeshVertex v;
+        v.Position = wv.position;
+        v.Normal = wv.normal;
+        v.TexCoords = wv.texCoords;
+        v.Tangent = glm::vec3(0.0f);
+        v.Bitangent = glm::vec3(0.0f);
+
+        vertices.push_back(v);
+    }
+
+    indices = meshData.indices;
+
+    localAABB.min = meshData.aabbMin;
+    localAABB.max = meshData.aabbMax;
+    aabbDirty = false;
+
+    numVertices = vertices.size();
+    numIndices = indices.size();
+
+    SetupMesh();
+
+    std::cout << "[ComponentMesh] Loaded from Wizard format: "
+        << numVertices << " vertices, "
+        << numIndices << " indices" << std::endl;
+}

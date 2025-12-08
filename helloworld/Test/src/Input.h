@@ -50,13 +50,18 @@ public:
 
     std::vector<std::string> droppedFiles;
 
+    void ResetMouseWheel() { mouseWheelY = 0; }
+    bool IsMouseOverImGui() const;
+    void SetViewportHovered(bool hovered) { viewportHovered = hovered; }
+    bool IsViewportHovered() const { return viewportHovered; }
 
 private:
     KeyState keyboard[MAX_KEYS];
     KeyState mouseButtons[NUM_MOUSE_BUTTONS];
     bool windowEvents[WE_COUNT];
-
+    bool mouseOverImGui = false;
     int mouseX, mouseY;
     int mouseMotionX, mouseMotionY;
     int mouseWheelY;
+    bool viewportHovered = false;
 };

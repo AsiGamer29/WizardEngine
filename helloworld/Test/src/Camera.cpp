@@ -1,17 +1,71 @@
 #include "Camera.h"
-#include "Input.h"
 #include <glm/gtc/matrix_transform.hpp>
-#include <SDL3/SDL.h>
+#include <iostream>
 
 Camera::Camera(glm::vec3 position, glm::vec3 up, float yaw, float pitch)
     : position(position), worldUp(up), yaw(yaw), pitch(pitch),
-    front(glm::vec3(0, 0, -1)), baseMovementSpeed(2.5f), movementSpeed(2.5f),
-    sprintMultiplier(2.0f), mouseSensitivity(0.1f),
+    movementSpeed(5.0f), baseMovementSpeed(5.0f), mouseSensitivity(0.1f),
     zoom(45.0f), fov(45.0f), aspectRatio(16.0f / 9.0f),
-    nearPlane(0.1f), farPlane(1000.0f),
-    orbitDistance(5.0f), orbitTarget(glm::vec3(0.0f))
+    nearPlane(0.1f), farPlane(1000.0f)
 {
+    front = glm::vec3(0.0f, 0.0f, -1.0f);
     updateCameraVectors();
+}
+
+void Camera::update(Input* input, float deltaTime)
+{
+    if (!input) return;
+
+    // CRITICAL: Solo procesar input de camara si el viewport esta hovered
+    bool viewportHovered = input->IsViewportHovered();
+
+    processKeyboard(input, deltaTime);
+
+    bool rightMousePressed = (input->GetMouseButton(3) == KEY_DOWN || input->GetMouseButton(3) == KEY_REPEAT);
+    bool leftMousePressed = (input->GetMouseButton(1) == KEY_DOWN || input->GetMouseButton(1) == KEY_REPEAT);
+
+    SDL_Point motion = input->GetMouseMotion();
+    float xoffset = static_cast<float>(motion.x);
+    float yoffset = static_cast<float>(motion.y);
+
+    if (rightMousePressed && viewportHovered)
+    {
+        if (!wasRightMousePressed)
+        {
+            wasRightMousePressed = true;
+        }
+        processMouseMovement(xoffset, yoffset);
+    }
+    else
+    {
+        wasRightMousePressed = false;
+    }
+
+    if (leftMousePressed && viewportHovered)
+    {
+        if (!wasLeftMousePressed)
+        {
+            wasLeftMousePressed = true;
+            orbitMode = true;
+            orbitTarget = position + front * orbitDistance;
+        }
+        processOrbitMovement(xoffset, yoffset);
+    }
+    else
+    {
+        wasLeftMousePressed = false;
+        orbitMode = false;
+    }
+
+    // CRITICAL: Solo procesar scroll wheel si el viewport esta hovered
+    if (viewportHovered)
+    {
+        int wheel = input->GetMouseWheel();
+        if (wheel != 0)
+        {
+            processMouseScroll(static_cast<float>(wheel));
+        }
+    }
 }
 
 glm::mat4 Camera::getViewMatrix() const
@@ -21,7 +75,7 @@ glm::mat4 Camera::getViewMatrix() const
 
 glm::mat4 Camera::getProjectionMatrix() const
 {
-    return glm::perspective(glm::radians(zoom), aspectRatio, nearPlane, farPlane);
+    return glm::perspective(glm::radians(fov), aspectRatio, nearPlane, farPlane);
 }
 
 void Camera::setProjection(float fov, float aspect, float nearP, float farP)
@@ -30,53 +84,45 @@ void Camera::setProjection(float fov, float aspect, float nearP, float farP)
     this->aspectRatio = aspect;
     this->nearPlane = nearP;
     this->farPlane = farP;
-    zoom = fov;
 }
 
-void Camera::update(Input* input, float deltaTime)
+Ray Camera::ScreenPointToRay(float mouseX, float mouseY, int screenWidth, int screenHeight)
 {
-    if (!input) return;
+    float ndcX = (2.0f * mouseX) / screenWidth - 1.0f;
+    float ndcY = 1.0f - (2.0f * mouseY) / screenHeight;
 
-    bool rightMouse = input->GetMouseButton(3) == KEY_DOWN || input->GetMouseButton(3) == KEY_REPEAT; // botón derecho
-    bool leftMouse = input->GetMouseButton(1) == KEY_DOWN || input->GetMouseButton(1) == KEY_REPEAT; // botón izquierdo
-    bool altPressed = input->GetKey(SDL_SCANCODE_LALT) == KEY_DOWN || input->GetKey(SDL_SCANCODE_LALT) == KEY_REPEAT ||
-        input->GetKey(SDL_SCANCODE_RALT) == KEY_DOWN || input->GetKey(SDL_SCANCODE_RALT) == KEY_REPEAT;
+    glm::vec4 clipCoords(ndcX, ndcY, -1.0f, 1.0f);
 
-    float currentSpeed = (input->GetKey(SDL_SCANCODE_LSHIFT) == KEY_REPEAT || input->GetKey(SDL_SCANCODE_RSHIFT) == KEY_REPEAT)
-        ? baseMovementSpeed * sprintMultiplier
-        : baseMovementSpeed;
+    glm::mat4 invProj = glm::inverse(getProjectionMatrix());
+    glm::vec4 eyeCoords = invProj * clipCoords;
+    eyeCoords = glm::vec4(eyeCoords.x, eyeCoords.y, -1.0f, 0.0f);
 
-    float velocity = currentSpeed * deltaTime;
-    SDL_Point motion = input->GetMouseMotion();
-    int wheel = input->GetMouseWheel();
+    glm::mat4 invView = glm::inverse(getViewMatrix());
+    glm::vec4 worldCoords = invView * eyeCoords;
+    glm::vec3 rayDirection = glm::normalize(glm::vec3(worldCoords));
 
-    // --- ORBIT ---
-    if (altPressed && leftMouse)
-    {
-        if (!wasLeftMousePressed) {
-            orbitTarget = position + front * orbitDistance;
-        }
-        processOrbitMovement(static_cast<float>(motion.x), static_cast<float>(motion.y));
-    }
-
-    // --- FREE LOOK ---
-    else if (rightMouse)
-    {
-        processMouseMovement(static_cast<float>(motion.x), -static_cast<float>(motion.y));
-        processKeyboard(input, velocity);
-    }
-
-    // --- ZOOM ---
-    if (wheel != 0)
-        processMouseScroll(static_cast<float>(wheel));
-
-    wasRightMousePressed = rightMouse;
-    wasLeftMousePressed = leftMouse;
+    return Ray(position, rayDirection);
 }
 
-
-void Camera::processKeyboard(Input* input, float velocity)
+void Camera::updateCameraVectors()
 {
+    glm::vec3 newFront;
+    newFront.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+    newFront.y = sin(glm::radians(pitch));
+    newFront.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+    front = glm::normalize(newFront);
+
+    right = glm::normalize(glm::cross(front, worldUp));
+    up = glm::normalize(glm::cross(right, front));
+}
+
+void Camera::processKeyboard(Input* input, float deltaTime)
+{
+    bool isSprinting = (input->GetKey(SDL_SCANCODE_LSHIFT) == KEY_DOWN ||
+        input->GetKey(SDL_SCANCODE_LSHIFT) == KEY_REPEAT);
+
+    float velocity = (isSprinting ? baseMovementSpeed * sprintMultiplier : baseMovementSpeed) * deltaTime;
+
     if (input->GetKey(SDL_SCANCODE_W) == KEY_DOWN || input->GetKey(SDL_SCANCODE_W) == KEY_REPEAT)
         position += front * velocity;
     if (input->GetKey(SDL_SCANCODE_S) == KEY_DOWN || input->GetKey(SDL_SCANCODE_S) == KEY_REPEAT)
@@ -85,6 +131,10 @@ void Camera::processKeyboard(Input* input, float velocity)
         position -= right * velocity;
     if (input->GetKey(SDL_SCANCODE_D) == KEY_DOWN || input->GetKey(SDL_SCANCODE_D) == KEY_REPEAT)
         position += right * velocity;
+    if (input->GetKey(SDL_SCANCODE_Q) == KEY_DOWN || input->GetKey(SDL_SCANCODE_Q) == KEY_REPEAT)
+        position -= up * velocity;
+    if (input->GetKey(SDL_SCANCODE_E) == KEY_DOWN || input->GetKey(SDL_SCANCODE_E) == KEY_REPEAT)
+        position += up * velocity;
 }
 
 void Camera::processMouseMovement(float xoffset, float yoffset, bool constrainPitch)
@@ -93,79 +143,41 @@ void Camera::processMouseMovement(float xoffset, float yoffset, bool constrainPi
     yoffset *= mouseSensitivity;
 
     yaw += xoffset;
-    pitch += yoffset;
+    pitch -= yoffset;
 
     if (constrainPitch)
     {
-        if (pitch > 89.0f) pitch = 89.0f;
-        if (pitch < -89.0f) pitch = -89.0f;
+        if (pitch > 89.0f)
+            pitch = 89.0f;
+        if (pitch < -89.0f)
+            pitch = -89.0f;
     }
 
     updateCameraVectors();
 }
 
-void Camera::processOrbitMovement(float xoffset, float yoffset)
-{
-    xoffset *= -mouseSensitivity;
-    yoffset *= -mouseSensitivity;
-
-    yaw += xoffset;
-    pitch += yoffset;
-
-    if (pitch > 89.0f) pitch = 89.0f;
-    if (pitch < -89.0f) pitch = -89.0f;
-
-    glm::vec3 direction;
-    direction.x = cos(glm::radians(pitch)) * cos(glm::radians(yaw));
-    direction.y = sin(glm::radians(pitch));
-    direction.z = cos(glm::radians(pitch)) * sin(glm::radians(yaw));
-
-    position = orbitTarget - glm::normalize(direction) * orbitDistance;
-
-    front = glm::normalize(orbitTarget - position);
-
-    right = glm::normalize(glm::cross(front, worldUp));
-    up = glm::normalize(glm::cross(right, front));
-}
-
-
-
 void Camera::processMouseScroll(float yoffset)
 {
-    zoom -= yoffset * 2.0f;
-    if (zoom < 1.0f) zoom = 1.0f;
-    if (zoom > 90.0f) zoom = 90.0f;
+    float zoomSpeed = 2.0f;
+    position += front * yoffset * zoomSpeed;
 }
 
-void Camera::updateCameraVectors()
+void Camera::processOrbitMovement(float xoffset, float yoffset)
 {
-    glm::vec3 f;
-    f.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-    f.y = sin(glm::radians(pitch));
-    f.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-    front = glm::normalize(f);
-    right = glm::normalize(glm::cross(front, worldUp));
-    up = glm::normalize(glm::cross(right, front));
-}
+    if (!orbitMode) return;
 
-Ray Camera::ScreenPointToRay(float mouseX, float mouseY, int screenWidth, int screenHeight)
-{
-    // Normalizar coordenadas del mouse a [-1, 1]
-    float x = (2.0f * mouseX) / screenWidth - 1.0f;
-    float y = 1.0f - (2.0f * mouseY) / screenHeight;  // Invertir Y
+    xoffset *= mouseSensitivity;
+    yoffset *= mouseSensitivity;
 
-    // Crear punto en Near Plane (NDC)
-    glm::vec4 rayClip = glm::vec4(x, y, -1.0f, 1.0f);
+    yaw += xoffset;
+    pitch -= yoffset;
 
-    // Transformar a Eye Space
-    glm::mat4 projInverse = glm::inverse(getProjectionMatrix());
-    glm::vec4 rayEye = projInverse * rayClip;
-    rayEye = glm::vec4(rayEye.x, rayEye.y, -1.0f, 0.0f);
+    if (pitch > 89.0f)
+        pitch = 89.0f;
+    if (pitch < -89.0f)
+        pitch = -89.0f;
 
-    // Transformar a World Space
-    glm::mat4 viewInverse = glm::inverse(getViewMatrix());
-    glm::vec4 rayWorld = viewInverse * rayEye;
-    glm::vec3 rayDirection = glm::normalize(glm::vec3(rayWorld));
+    updateCameraVectors();
 
-    return Ray(position, rayDirection);
+    position = orbitTarget - front * orbitDistance;
 }

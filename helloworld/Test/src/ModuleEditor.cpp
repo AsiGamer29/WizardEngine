@@ -794,10 +794,16 @@ bool ModuleEditor::Update()
             // Avanzar cursor
             ImGui::Dummy(availableSize);
 
-            // Tracking del mouse
             bool imageHovered = ImGui::IsItemHovered();
             bool imageClicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
             isMouseOverViewport = imageHovered;
+
+            // NUEVO: Actualizar el estado del viewport para Input
+            auto& app = Application::GetInstance();
+            if (app.input)
+            {
+                app.input->SetViewportHovered(imageHovered);
+            }
 
             // ===== DIBUJAR GIZMO =====
             HandleGizmo();

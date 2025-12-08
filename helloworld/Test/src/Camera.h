@@ -19,8 +19,6 @@ public:
     void setProjection(float fov, float aspect, float nearP, float farP);
     Ray ScreenPointToRay(float mouseX, float mouseY, int screenWidth, int screenHeight);
 
-
-private:
     void updateCameraVectors();
     void processKeyboard(Input* input, float deltaTime);
     void processMouseMovement(float xoffset, float yoffset, bool constrainPitch = true);
