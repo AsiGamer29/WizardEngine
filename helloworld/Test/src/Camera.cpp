@@ -16,32 +16,28 @@ void Camera::update(Input* input, float deltaTime)
 {
     if (!input) return;
 
-    // CRITICAL: Solo procesar input de camara si el viewport esta hovered
     bool viewportHovered = input->IsViewportHovered();
 
-    processKeyboard(input, deltaTime);
-
+    // BOTON DERECHO: Movimiento con WASD + mirar alrededor (primera persona)
     bool rightMousePressed = (input->GetMouseButton(3) == KEY_DOWN || input->GetMouseButton(3) == KEY_REPEAT);
-    bool leftMousePressed = (input->GetMouseButton(1) == KEY_DOWN || input->GetMouseButton(1) == KEY_REPEAT);
-
-    SDL_Point motion = input->GetMouseMotion();
-    float xoffset = static_cast<float>(motion.x);
-    float yoffset = static_cast<float>(motion.y);
 
     if (rightMousePressed && viewportHovered)
     {
-        if (!wasRightMousePressed)
-        {
-            wasRightMousePressed = true;
-        }
+        processKeyboard(input, deltaTime);
+
+        SDL_Point motion = input->GetMouseMotion();
+        float xoffset = static_cast<float>(motion.x);
+        float yoffset = static_cast<float>(motion.y);
+
         processMouseMovement(xoffset, yoffset);
     }
-    else
-    {
-        wasRightMousePressed = false;
-    }
 
-    if (leftMousePressed && viewportHovered)
+    // ALT + BOTON IZQUIERDO: Orbitar alrededor de un punto
+    bool leftMousePressed = (input->GetMouseButton(1) == KEY_DOWN || input->GetMouseButton(1) == KEY_REPEAT);
+    bool altPressed = (input->GetKey(SDL_SCANCODE_LALT) == KEY_DOWN || input->GetKey(SDL_SCANCODE_LALT) == KEY_REPEAT ||
+        input->GetKey(SDL_SCANCODE_RALT) == KEY_DOWN || input->GetKey(SDL_SCANCODE_RALT) == KEY_REPEAT);
+
+    if (leftMousePressed && altPressed && viewportHovered)
     {
         if (!wasLeftMousePressed)
         {
@@ -49,6 +45,11 @@ void Camera::update(Input* input, float deltaTime)
             orbitMode = true;
             orbitTarget = position + front * orbitDistance;
         }
+
+        SDL_Point motion = input->GetMouseMotion();
+        float xoffset = static_cast<float>(motion.x);
+        float yoffset = static_cast<float>(motion.y);
+
         processOrbitMovement(xoffset, yoffset);
     }
     else
@@ -57,7 +58,7 @@ void Camera::update(Input* input, float deltaTime)
         orbitMode = false;
     }
 
-    // CRITICAL: Solo procesar scroll wheel si el viewport esta hovered
+    // SCROLL: Zoom
     if (viewportHovered)
     {
         int wheel = input->GetMouseWheel();
@@ -164,20 +165,26 @@ void Camera::processMouseScroll(float yoffset)
 
 void Camera::processOrbitMovement(float xoffset, float yoffset)
 {
-    if (!orbitMode) return;
+    xoffset *= -mouseSensitivity;
+    yoffset *= -mouseSensitivity;
 
-    xoffset *= mouseSensitivity;
-    yoffset *= mouseSensitivity;
 
     yaw += xoffset;
-    pitch -= yoffset;
+    pitch += yoffset;
 
-    if (pitch > 89.0f)
-        pitch = 89.0f;
-    if (pitch < -89.0f)
-        pitch = -89.0f;
+    if (pitch > 89.0f) pitch = 89.0f;
+    if (pitch < -89.0f) pitch = -89.0f;
 
-    updateCameraVectors();
 
-    position = orbitTarget - front * orbitDistance;
+    glm::vec3 direction;
+    direction.x = cos(glm::radians(pitch)) * cos(glm::radians(yaw));
+    direction.y = sin(glm::radians(pitch));
+    direction.z = cos(glm::radians(pitch)) * sin(glm::radians(yaw));
+
+    position = orbitTarget - glm::normalize(direction) * orbitDistance;
+
+    front = glm::normalize(orbitTarget - position);
+
+    right = glm::normalize(glm::cross(front, worldUp));
+    up = glm::normalize(glm::cross(right, front));
 }
