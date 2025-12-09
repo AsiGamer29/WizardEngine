@@ -16,6 +16,7 @@ Application::Application() : isRunning(true)
         glm::vec3(0.0f, 1.0f, 0.0f),
         -90.0f, 0.0f
     );
+    assetManager = std::make_shared<WizardEngine::AssetManager>();
 
     // ORDEN DE INICIALIZACIÓN (importante):
     // 1. ModuleScene (crea el root)
@@ -58,6 +59,15 @@ bool Application::Start()
         }
     }
     std::cout << "Application started successfully" << std::endl;
+
+    if (assetManager)
+    {
+        std::cout << "[Application] Initializing AssetManager..." << std::endl;
+        assetManager->Initialize();
+        assetManager->ScanAssetsFolder();
+        assetManager->PrintStatistics();
+    }
+
     return result;
 }
 

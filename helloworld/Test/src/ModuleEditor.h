@@ -58,6 +58,10 @@ private:
     void OpenSaveSceneDialog();
     void OpenLoadSceneDialog();
 
+    void LoadModelFromWZD(const std::string& wzdPath);
+    void LoadMeshFromWZM(const std::string& wzmPath);
+    std::string GetFileExtension(const std::string& filepath);
+
     bool inspector_show_checkerboard = false;
     unsigned int inspectorCheckerTex = 0;
     void* inspectorOverrideTarget = nullptr;

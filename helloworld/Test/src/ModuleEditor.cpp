@@ -15,11 +15,14 @@
 
 #include "GeometryGenerator.h"
 #include "GameObject.h"
-#include "ComponentTransform.h"
 #include "ComponentMesh.h"
 #include "ComponentMaterial.h"
 #include "ModuleScene.h"
 #include "Texture.h"
+#include "ModelImporter.h"
+#include "MeshImporter.h"
+#include "TextureImporter.h"
+
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
@@ -1329,39 +1332,87 @@ void ModuleEditor::ProcessEvent(const SDL_Event& event)
         const char* data = event.drop.data;
         if (data)
         {
-            std::string path(data);
-            std::string name;
-            size_t pos = path.find_last_of("/\\");
-            if (pos != std::string::npos && pos + 1 < path.size())
-                name = path.substr(pos + 1);
-            else
-                name = path;
+            std::string droppedPath(data);
+            std::string ext = GetFileExtension(droppedPath);
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
-            std::string ext;
-            size_t dot = name.find_last_of('.');
-            if (dot != std::string::npos && dot + 1 < name.size())
-                ext = name.substr(dot + 1);
-            std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+            PushEnginePrintf("File dropped: %s", droppedPath.c_str());
 
-            const std::vector<std::string> tex_ext = { "png","jpg","jpeg","bmp","tga","dds","tif","tiff","psd" };
-            const std::vector<std::string> model_ext = { "fbx","obj","gltf","glb","dae","3ds" };
+            auto& app = Application::GetInstance();
 
-            if (std::find(tex_ext.begin(), tex_ext.end(), ext) != tex_ext.end())
+            // ===== CASO 1: Archivo .WZD (Modelo custom) =====
+            if (ext == "wzd")
             {
-                PushEnginePrintf("Texture dropped: %s", name.c_str());
+                LoadModelFromWZD(droppedPath);
             }
-            else if (std::find(model_ext.begin(), model_ext.end(), ext) != model_ext.end())
+            // ===== CASO 2: Archivo .WZM (Mesh custom) =====
+            else if (ext == "wzm")
             {
-                PushEnginePrintf("Model dropped: %s", name.c_str());
+                LoadMeshFromWZM(droppedPath);
             }
+            // ===== CASO 3: Archivo .WZT (Texture custom) =====
+            else if (ext == "wzt")
+            {
+                PushEngineLog("WZT files must be loaded with a model");
+            }
+            // ===== CASO 4: Archivos externos (FBX, OBJ, PNG...) =====
             else
             {
-                PushEnginePrintf("File dropped: %s", name.c_str());
+                // Copiar a Assets/
+                std::filesystem::path sourcePath(droppedPath);
+                std::string targetPath = "Assets/" + sourcePath.filename().string();
+
+                try {
+                    std::filesystem::copy_file(droppedPath, targetPath,
+                        std::filesystem::copy_options::overwrite_existing);
+
+                    PushEnginePrintf("Copied to: %s", targetPath.c_str());
+
+                    // Procesar con AssetManager
+                    if (app.assetManager)
+                    {
+                        if (app.assetManager->ProcessAssetFile(targetPath))
+                        {
+                            PushEngineLog("Asset imported successfully!");
+                            app.assetManager->PrintStatistics();
+
+                            // Si es un modelo, cargarlo automáticamente
+                            if (ext == "fbx" || ext == "obj" || ext == "gltf" ||
+                                ext == "glb" || ext == "dae")
+                            {
+                                std::string libraryPath = app.assetManager->GetLibraryPath(
+                                    targetPath, "wzd");
+                                if (!libraryPath.empty())
+                                {
+                                    LoadModelFromWZD(libraryPath);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            PushEngineLog("ERROR: Failed to import asset");
+                        }
+                    }
+                }
+                catch (const std::exception& e) {
+                    PushEnginePrintf("ERROR copying file: %s", e.what());
+                }
             }
         }
     }
 
     ImGui_ImplSDL3_ProcessEvent(&event);
+}
+
+// Helper para obtener extensión
+std::string ModuleEditor::GetFileExtension(const std::string& filepath)
+{
+    size_t pos = filepath.find_last_of('.');
+    if (pos != std::string::npos && pos + 1 < filepath.size())
+    {
+        return filepath.substr(pos + 1);
+    }
+    return "";
 }
 
 void ModuleEditor::HandleGizmo()
@@ -1758,4 +1809,213 @@ void ModuleEditor::OpenLoadSceneDialog()
     RefreshSceneList();
     show_load_scene_popup = true;
     PushEngineLog("Opening Load Scene dialog...");
+}
+
+void ModuleEditor::LoadModelFromWZD(const std::string& wzdPath)
+{
+    PushEnginePrintf("Loading model from: %s", wzdPath.c_str());
+
+    auto& app = Application::GetInstance();
+    if (!app.moduleScene)
+    {
+        PushEngineLog("ERROR: ModuleScene not available");
+        return;
+    }
+
+    // Cargar modelo custom
+    WizardEngine::WizardModelData modelData;
+    if (!WizardEngine::ModelImporter::Load(wzdPath, modelData))
+    {
+        PushEngineLog("ERROR: Failed to load WZD file");
+        return;
+    }
+
+    // Crear GameObject root para el modelo
+    std::string modelName = std::filesystem::path(wzdPath).stem().string();
+    GameObject* modelRoot = app.moduleScene->CreateGameObject(
+        modelName.c_str(),
+        app.moduleScene->GetRoot()
+    );
+
+    if (!modelRoot)
+    {
+        PushEngineLog("ERROR: Failed to create GameObject");
+        return;
+    }
+
+    // Cargar cada mesh del modelo
+    for (size_t i = 0; i < modelData.meshes.size(); i++)
+    {
+        const auto& meshRef = modelData.meshes[i];
+
+        // Cargar mesh data
+        WizardEngine::WizardMeshData meshData;
+        if (!WizardEngine::MeshImporter::Load(meshRef.meshFilepath, meshData))
+        {
+            PushEnginePrintf("WARNING: Failed to load mesh: %s", meshRef.meshFilepath.c_str());
+            continue;
+        }
+
+        // Crear GameObject para esta mesh
+        std::string meshName = modelName + "_mesh_" + std::to_string(i);
+        GameObject* meshObj = app.moduleScene->CreateGameObject(meshName.c_str(), modelRoot);
+
+        if (!meshObj) continue;
+
+        // Añadir ComponentMesh
+        ComponentMesh* meshComp = static_cast<ComponentMesh*>(
+            meshObj->CreateComponent(ComponentType::MESH)
+            );
+
+        if (meshComp)
+        {
+            // Convertir WizardMeshData a MeshGeometry
+            MeshGeometry geom;
+            geom.vertices.reserve(meshData.vertices.size());
+
+            for (const auto& v : meshData.vertices)
+            {
+                GeomVertex gv;
+                gv.Position = v.position;
+                gv.Normal = v.normal;
+                gv.TexCoords = v.texCoords;
+                geom.vertices.push_back(gv);
+            }
+
+            geom.indices = meshData.indices;
+
+            meshComp->LoadFromGeometry(&geom);
+        }
+
+        // Añadir ComponentMaterial
+        ComponentMaterial* matComp = static_cast<ComponentMaterial*>(
+            meshObj->CreateComponent(ComponentType::MATERIAL)
+            );
+
+        if (matComp && meshRef.materialIndex < modelData.materials.size())
+        {
+            const auto& matData = modelData.materials[meshRef.materialIndex];
+
+            // Cargar textura si existe
+            if (!matData.diffuseTexture.empty())
+            {
+                WizardEngine::WizardTextureData texData;
+                if (WizardEngine::TextureImporter::Load(matData.diffuseTexture, texData))
+                {
+                    // Crear textura OpenGL
+                    GLuint texID;
+                    glGenTextures(1, &texID);
+                    glBindTexture(GL_TEXTURE_2D, texID);
+
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                        texData.width, texData.height, 0,
+                        GL_RGBA, GL_UNSIGNED_BYTE, texData.data.data());
+
+                    glGenerateMipmap(GL_TEXTURE_2D);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+                    matComp->SetTexture(texID, matData.diffuseTexture.c_str(), texData.channels);
+
+                    PushEnginePrintf("Loaded texture: %s", matData.diffuseTexture.c_str());
+                }
+                else
+                {
+                    // Usar checkerboard por defecto
+                    GLuint checkerTex = Texture::CreateCheckerboardTexture(512, 512, 32);
+                    matComp->SetTexture(checkerTex, "checkerboard_default", 3);
+                }
+            }
+            else
+            {
+                // Sin textura, usar checkerboard
+                GLuint checkerTex = Texture::CreateCheckerboardTexture(512, 512, 32);
+                matComp->SetTexture(checkerTex, "checkerboard_default", 3);
+            }
+        }
+
+        meshObj->UpdateAABB();
+    }
+
+    // Actualizar AABBs de toda la escena
+    app.moduleScene->UpdateAllAABBs();
+
+    PushEnginePrintf("Model loaded successfully: %s (%zu meshes)",
+        modelName.c_str(), modelData.meshes.size());
+}
+
+void ModuleEditor::LoadMeshFromWZM(const std::string& wzmPath)
+{
+    PushEnginePrintf("Loading mesh from: %s", wzmPath.c_str());
+
+    auto& app = Application::GetInstance();
+    if (!app.moduleScene)
+    {
+        PushEngineLog("ERROR: ModuleScene not available");
+        return;
+    }
+
+    // Cargar mesh custom
+    WizardEngine::WizardMeshData meshData;
+    if (!WizardEngine::MeshImporter::Load(wzmPath, meshData))
+    {
+        PushEngineLog("ERROR: Failed to load WZM file");
+        return;
+    }
+
+    // Crear GameObject
+    std::string meshName = std::filesystem::path(wzmPath).stem().string();
+    GameObject* meshObj = app.moduleScene->CreateGameObject(
+        meshName.c_str(),
+        app.moduleScene->GetRoot()
+    );
+
+    if (!meshObj)
+    {
+        PushEngineLog("ERROR: Failed to create GameObject");
+        return;
+    }
+
+    // Añadir ComponentMesh
+    ComponentMesh* meshComp = static_cast<ComponentMesh*>(
+        meshObj->CreateComponent(ComponentType::MESH)
+        );
+
+    if (meshComp)
+    {
+        // Convertir WizardMeshData a MeshGeometry
+        MeshGeometry geom;
+        geom.vertices.reserve(meshData.vertices.size());
+
+        for (const auto& v : meshData.vertices)
+        {
+            GeomVertex gv;
+            gv.Position = v.position;
+            gv.Normal = v.normal;
+            gv.TexCoords = v.texCoords;
+            geom.vertices.push_back(gv);
+        }
+
+        geom.indices = meshData.indices;
+
+        meshComp->LoadFromGeometry(&geom);
+    }
+
+    // Añadir material con checkerboard
+    ComponentMaterial* matComp = static_cast<ComponentMaterial*>(
+        meshObj->CreateComponent(ComponentType::MATERIAL)
+        );
+
+    if (matComp)
+    {
+        GLuint checkerTex = Texture::CreateCheckerboardTexture(512, 512, 32);
+        matComp->SetTexture(checkerTex, "checkerboard_default", 3);
+    }
+
+    meshObj->UpdateAABB();
+    app.moduleScene->UpdateAllAABBs();
+
+    PushEnginePrintf("Mesh loaded successfully: %s", meshName.c_str());
 }
