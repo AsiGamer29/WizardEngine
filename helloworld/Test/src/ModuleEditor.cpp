@@ -426,24 +426,28 @@ bool ModuleEditor::Update()
         ImGui::SetNextWindowSize(main_viewport->WorkSize);
         ImGui::SetNextWindowViewport(main_viewport->ID);
 
-        ImGuiWindowFlags host_flags = ImGuiWindowFlags_NoTitleBar
+        ImGuiWindowFlags host_flags =
+            ImGuiWindowFlags_NoTitleBar
             | ImGuiWindowFlags_NoCollapse
             | ImGuiWindowFlags_NoResize
             | ImGuiWindowFlags_NoMove
             | ImGuiWindowFlags_NoBringToFrontOnFocus
             | ImGuiWindowFlags_NoNavFocus
-            | ImGuiWindowFlags_NoDecoration;
+            | ImGuiWindowFlags_NoDocking;
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+
         ImGui::Begin("MainDockSpaceWindow", nullptr, host_flags);
         ImGui::PopStyleVar(2);
 
         ImGuiID dockspace_id = ImGui::GetID("MainDockSpace");
-        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f),
+            ImGuiDockNodeFlags_None);
 
         ImGui::End();
     }
+
 
 
 
@@ -1340,63 +1344,59 @@ void ModuleEditor::ProcessEvent(const SDL_Event& event)
 
             auto& app = Application::GetInstance();
 
-            // ===== CASO 1: Archivo .WZD (Modelo custom) =====
-            if (ext == "wzd")
+            // CASO 1: Archivo custom ya procesado (.wzd, .wzm, .wzt)
+            if (ext == "wzd" || ext == "wzm" || ext == "wzt")
             {
-                LoadModelFromWZD(droppedPath);
+                PushEngineLog("ERROR: Custom formats should be in Library/, not dropped directly");
+                PushEngineLog("Please drop the original file (FBX, PNG, etc.) instead");
+                return;
             }
-            // ===== CASO 2: Archivo .WZM (Mesh custom) =====
-            else if (ext == "wzm")
-            {
-                LoadMeshFromWZM(droppedPath);
-            }
-            // ===== CASO 3: Archivo .WZT (Texture custom) =====
-            else if (ext == "wzt")
-            {
-                PushEngineLog("WZT files must be loaded with a model");
-            }
-            // ===== CASO 4: Archivos externos (FBX, OBJ, PNG...) =====
-            else
-            {
+
+            // CASO 2: Archivo externo - copiar a Assets/ y procesar
+            std::filesystem::path sourcePath(droppedPath);
+            std::string targetPath = "Assets/" + sourcePath.filename().string();
+
+            try {
                 // Copiar a Assets/
-                std::filesystem::path sourcePath(droppedPath);
-                std::string targetPath = "Assets/" + sourcePath.filename().string();
+                std::filesystem::copy_file(droppedPath, targetPath,
+                    std::filesystem::copy_options::overwrite_existing);
 
-                try {
-                    std::filesystem::copy_file(droppedPath, targetPath,
-                        std::filesystem::copy_options::overwrite_existing);
+                PushEnginePrintf("Copied to: %s", targetPath.c_str());
 
-                    PushEnginePrintf("Copied to: %s", targetPath.c_str());
-
-                    // Procesar con AssetManager
-                    if (app.assetManager)
+                // Procesar con AssetManager
+                if (app.assetManager)
+                {
+                    // IMPORTANTE: Solo procesar, NO cargar
+                    if (app.assetManager->ProcessAssetFile(targetPath))
                     {
-                        if (app.assetManager->ProcessAssetFile(targetPath))
-                        {
-                            PushEngineLog("Asset imported successfully!");
-                            app.assetManager->PrintStatistics();
+                        PushEngineLog("Asset imported successfully!");
 
-                            // Si es un modelo, cargarlo automáticamente
-                            if (ext == "fbx" || ext == "obj" || ext == "gltf" ||
-                                ext == "glb" || ext == "dae")
+                        // Si es un modelo, obtener su UID y cargarlo UNA SOLA VEZ
+                        if (ext == "fbx" || ext == "obj" || ext == "gltf" ||
+                            ext == "glb" || ext == "dae")
+                        {
+                            WizardEngine::UID modelUID = app.assetManager->Find(targetPath);
+                            if (modelUID != 0)
                             {
-                                std::string libraryPath = app.assetManager->GetLibraryPath(
-                                    targetPath, "wzd");
+                                std::string libraryPath = app.assetManager->GetLibraryPath(targetPath);
                                 if (!libraryPath.empty())
                                 {
                                     LoadModelFromWZD(libraryPath);
+                                    PushEnginePrintf("Model loaded from Library with UID: %u", modelUID);
                                 }
                             }
                         }
-                        else
-                        {
-                            PushEngineLog("ERROR: Failed to import asset");
-                        }
+
+                        app.assetManager->PrintStatistics();
+                    }
+                    else
+                    {
+                        PushEngineLog("ERROR: Failed to import asset");
                     }
                 }
-                catch (const std::exception& e) {
-                    PushEnginePrintf("ERROR copying file: %s", e.what());
-                }
+            }
+            catch (const std::exception& e) {
+                PushEnginePrintf("ERROR copying file: %s", e.what());
             }
         }
     }
