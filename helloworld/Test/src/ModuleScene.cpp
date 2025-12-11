@@ -555,7 +555,7 @@ GameObject* ModuleScene::ImportModelFromAssets(const std::string& assetPath) {
     }
 
     // Obtener ruta del archivo .wzd generado
-    std::string libraryPath = assetManager->GetLibraryPath(assetPath, "wzd");
+    std::string libraryPath = assetManager->GetLibraryPath(assetPath);
     if (libraryPath.empty()) {
         std::cerr << "[ModuleScene] Failed to get library path" << std::endl;
         return nullptr;

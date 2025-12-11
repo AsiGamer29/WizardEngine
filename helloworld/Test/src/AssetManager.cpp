@@ -5,7 +5,6 @@
 #include <iostream>
 #include <fstream>
 #include <algorithm>
-#include <nlohmann/json.hpp>
 
 namespace WizardEngine {
 
@@ -14,33 +13,30 @@ namespace WizardEngine {
     }
 
     AssetManager::~AssetManager() {
-        SaveMetadata();
     }
 
     bool AssetManager::Initialize() {
         std::cout << "[AssetManager] Initializing..." << std::endl;
 
-        // Create main directories
         std::filesystem::create_directories(assetsDir);
         std::filesystem::create_directories(libraryDir);
-
-        // Create library subdirectories
         std::filesystem::create_directories(libraryDir + "Meshes");
         std::filesystem::create_directories(libraryDir + "Textures");
         std::filesystem::create_directories(libraryDir + "Materials");
         std::filesystem::create_directories(libraryDir + "Models");
 
-        std::cout << "[AssetManager] Created directory structure:" << std::endl;
-        std::cout << "  - " << assetsDir << std::endl;
-        std::cout << "  - " << libraryDir << "Meshes" << std::endl;
-        std::cout << "  - " << libraryDir << "Textures" << std::endl;
-        std::cout << "  - " << libraryDir << "Materials" << std::endl;
-        std::cout << "  - " << libraryDir << "Models" << std::endl;
+        std::cout << "[AssetManager] Directory structure created" << std::endl;
 
-        LoadMetadata();
         ScanAssetsFolder();
 
         return true;
+    }
+
+    uint64_t AssetManager::GetFileTimestamp(const std::string& filepath) {
+        if (!std::filesystem::exists(filepath)) return 0;
+
+        auto ftime = std::filesystem::last_write_time(filepath);
+        return ftime.time_since_epoch().count();
     }
 
     bool AssetManager::ProcessAssetFile(const std::string& filepath) {
@@ -49,18 +45,69 @@ namespace WizardEngine {
 
         std::cout << "[AssetManager] Processing: " << filepath << std::endl;
 
-        // Model formats
-        if (ext == "fbx" || ext == "obj" || ext == "gltf" || ext == "glb" || ext == "dae") {
-            return ProcessModelFile(filepath);
-        }
-        // Texture formats
-        else if (ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "bmp" ||
-            ext == "tga" || ext == "dds") {
-            return ProcessTextureFile(filepath);
+        // Check if .meta exists
+        std::string metaPath = MetaFile::GetMetaPath(filepath);
+        bool metaExists = std::filesystem::exists(metaPath);
+
+        AssetMetaData metaData;
+
+        if (metaExists) {
+            // Load existing meta
+            if (!MetaFile::Load(metaPath, metaData)) {
+                std::cerr << "[AssetManager] Failed to load meta, will recreate" << std::endl;
+                metaExists = false;
+            }
         }
 
-        std::cout << "[AssetManager] Unsupported file type: " << ext << std::endl;
-        return false;
+        if (!metaExists) {
+            // Create new meta
+            metaData.sourceFile = filepath;
+            metaData.uuid = MetaFile::GenerateUUID();
+            metaData.sourceTimestamp = GetFileTimestamp(filepath);
+            metaData.lastImportTimestamp = 0; // Force import
+        }
+
+        // Check if needs reimport
+        uint64_t currentTimestamp = GetFileTimestamp(filepath);
+        bool needsImport = (currentTimestamp != metaData.sourceTimestamp) ||
+            (metaData.lastImportTimestamp == 0);
+
+        if (!needsImport) {
+            std::cout << "[AssetManager] Asset up-to-date, skipping import" << std::endl;
+            metaCache[filepath] = metaData;
+            return true;
+        }
+
+        // Determine asset type and process
+        if (ext == "fbx" || ext == "obj" || ext == "gltf" || ext == "glb" || ext == "dae") {
+            metaData.assetType = "model";
+            if (!ProcessModelFile(filepath)) {
+                return false;
+            }
+        }
+        else if (ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "bmp" ||
+            ext == "tga" || ext == "dds") {
+            metaData.assetType = "texture";
+            if (!ProcessTextureFile(filepath)) {
+                return false;
+            }
+        }
+        else {
+            std::cout << "[AssetManager] Unsupported file type: " << ext << std::endl;
+            return false;
+        }
+
+        // Update meta timestamps
+        metaData.sourceTimestamp = currentTimestamp;
+        metaData.lastImportTimestamp = GetFileTimestamp(filepath);
+
+        // Save meta file
+        MetaFile::Save(metaPath, metaData);
+
+        // Cache it
+        metaCache[filepath] = metaData;
+
+        return true;
     }
 
     bool AssetManager::ProcessModelFile(const std::string& filepath) {
@@ -68,7 +115,6 @@ namespace WizardEngine {
 
         auto startTotal = std::chrono::high_resolution_clock::now();
 
-        // Import model to custom format
         std::string outputDir = libraryDir + "Models/" +
             std::filesystem::path(filepath).stem().string();
 
@@ -79,22 +125,16 @@ namespace WizardEngine {
             return false;
         }
 
-        // Save model metadata
         std::string wzdPath = outputDir + "/model.wzd";
         ModelImporter::Save(modelData, wzdPath);
+
+        // Update meta with library path
+        AssetMetaData& metaData = metaCache[filepath];
+        metaData.libraryFile = wzdPath;
 
         auto endTotal = std::chrono::high_resolution_clock::now();
         double totalTime = std::chrono::duration<double>(endTotal - startTotal).count();
 
-        // Update metadata
-        AssetMetadata meta;
-        meta.sourcePath = filepath;
-        meta.libraryPath = wzdPath;
-        meta.lastModified = std::filesystem::last_write_time(filepath);
-        meta.type = "model";
-        assetDatabase[filepath] = meta;
-
-        // Get timing info
         auto timing = ModelImporter::GetLastImportTiming();
 
         std::cout << "\n========================================" << std::endl;
@@ -125,7 +165,6 @@ namespace WizardEngine {
 
         auto startImport = std::chrono::high_resolution_clock::now();
 
-        // Import texture
         WizardTextureData texData = TextureImporter::Import(filepath);
 
         if (texData.data.empty()) {
@@ -135,7 +174,6 @@ namespace WizardEngine {
 
         auto endImport = std::chrono::high_resolution_clock::now();
 
-        // Save to library
         std::string filename = std::filesystem::path(filepath).stem().string() + ".wzt";
         std::string wztPath = libraryDir + "Textures/" + filename;
 
@@ -143,21 +181,15 @@ namespace WizardEngine {
         TextureImporter::Save(texData, wztPath);
         auto endSave = std::chrono::high_resolution_clock::now();
 
-        // Load test
+        // Update meta with library path
+        AssetMetaData& metaData = metaCache[filepath];
+        metaData.libraryFile = wztPath;
+
         WizardTextureData loadTest;
         auto startLoad = std::chrono::high_resolution_clock::now();
         TextureImporter::Load(wztPath, loadTest);
         auto endLoad = std::chrono::high_resolution_clock::now();
 
-        // Update metadata
-        AssetMetadata meta;
-        meta.sourcePath = filepath;
-        meta.libraryPath = wztPath;
-        meta.lastModified = std::filesystem::last_write_time(filepath);
-        meta.type = "texture";
-        assetDatabase[filepath] = meta;
-
-        // Print statistics
         double importTime = std::chrono::duration<double>(endImport - startImport).count();
         double saveTime = std::chrono::duration<double>(endSave - startSave).count();
         double loadTime = std::chrono::duration<double>(endLoad - startLoad).count();
@@ -181,30 +213,56 @@ namespace WizardEngine {
     }
 
     bool AssetManager::NeedsReimport(const std::string& assetPath) {
-        auto it = assetDatabase.find(assetPath);
-        if (it == assetDatabase.end()) {
-            return true; // Not in database, needs import
+        std::string metaPath = MetaFile::GetMetaPath(assetPath);
+
+        if (!std::filesystem::exists(metaPath)) {
+            return true; // No meta = needs import
         }
 
-        if (!std::filesystem::exists(assetPath)) {
-            return false; // Source doesn't exist
+        AssetMetaData metaData;
+        if (!MetaFile::Load(metaPath, metaData)) {
+            return true; // Can't load meta = needs import
         }
 
-        if (!std::filesystem::exists(it->second.libraryPath)) {
-            return true; // Library file missing
-        }
-
-        auto currentModified = std::filesystem::last_write_time(assetPath);
-        return currentModified > it->second.lastModified;
+        uint64_t currentTimestamp = GetFileTimestamp(assetPath);
+        return currentTimestamp != metaData.sourceTimestamp;
     }
 
-    std::string AssetManager::GetLibraryPath(const std::string& assetPath,
-        const std::string& extension) {
-        auto it = assetDatabase.find(assetPath);
-        if (it != assetDatabase.end()) {
-            return it->second.libraryPath;
+    std::string AssetManager::GetLibraryPath(const std::string& assetPath) {
+        auto it = metaCache.find(assetPath);
+        if (it != metaCache.end()) {
+            return it->second.libraryFile;
         }
+
+        // Try to load from meta file
+        std::string metaPath = MetaFile::GetMetaPath(assetPath);
+        if (std::filesystem::exists(metaPath)) {
+            AssetMetaData metaData;
+            if (MetaFile::Load(metaPath, metaData)) {
+                metaCache[assetPath] = metaData;
+                return metaData.libraryFile;
+            }
+        }
+
         return "";
+    }
+
+    AssetMetaData* AssetManager::GetMetaData(const std::string& assetPath) {
+        auto it = metaCache.find(assetPath);
+        if (it != metaCache.end()) {
+            return &it->second;
+        }
+
+        std::string metaPath = MetaFile::GetMetaPath(assetPath);
+        if (std::filesystem::exists(metaPath)) {
+            AssetMetaData metaData;
+            if (MetaFile::Load(metaPath, metaData)) {
+                metaCache[assetPath] = metaData;
+                return &metaCache[assetPath];
+            }
+        }
+
+        return nullptr;
     }
 
     void AssetManager::ScanAssetsFolder() {
@@ -218,12 +276,21 @@ namespace WizardEngine {
 
             std::string filepath = entry.path().string();
 
+            // Skip .meta files
+            if (GetFileExtension(filepath) == "meta") continue;
+
             if (NeedsReimport(filepath)) {
                 if (ProcessAssetFile(filepath)) {
                     processedCount++;
                 }
             }
             else {
+                // Load meta into cache even if not importing
+                AssetMetaData metaData;
+                std::string metaPath = MetaFile::GetMetaPath(filepath);
+                if (MetaFile::Load(metaPath, metaData)) {
+                    metaCache[filepath] = metaData;
+                }
                 skippedCount++;
             }
         }
@@ -233,99 +300,25 @@ namespace WizardEngine {
             << skippedCount << " skipped" << std::endl;
     }
 
-    std::vector<std::string> AssetManager::GetAssetsByExtension(const std::string& extension) {
-        std::vector<std::string> results;
-
-        for (const auto& pair : assetDatabase) {
-            std::string ext = GetFileExtension(pair.first);
-            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-
-            if (ext == extension) {
-                results.push_back(pair.first);
-            }
-        }
-
-        return results;
-    }
-
     void AssetManager::PrintStatistics() {
         int modelCount = 0;
         int textureCount = 0;
         int otherCount = 0;
 
-        for (const auto& pair : assetDatabase) {
-            if (pair.second.type == "model") modelCount++;
-            else if (pair.second.type == "texture") textureCount++;
+        for (const auto& pair : metaCache) {
+            if (pair.second.assetType == "model") modelCount++;
+            else if (pair.second.assetType == "texture") textureCount++;
             else otherCount++;
         }
 
         std::cout << "\n========================================" << std::endl;
         std::cout << "[AssetManager] DATABASE STATISTICS" << std::endl;
         std::cout << "========================================" << std::endl;
-        std::cout << "Total Assets: " << assetDatabase.size() << std::endl;
+        std::cout << "Total Assets: " << metaCache.size() << std::endl;
         std::cout << "Models: " << modelCount << std::endl;
         std::cout << "Textures: " << textureCount << std::endl;
         std::cout << "Other: " << otherCount << std::endl;
         std::cout << "========================================\n" << std::endl;
-    }
-
-    void AssetManager::SaveMetadata() {
-        nlohmann::json j;
-
-        for (const auto& pair : assetDatabase) {
-            nlohmann::json asset;
-            asset["sourcePath"] = pair.second.sourcePath;
-            asset["libraryPath"] = pair.second.libraryPath;
-            asset["type"] = pair.second.type;
-
-            auto timepoint = pair.second.lastModified.time_since_epoch().count();
-            asset["lastModified"] = timepoint;
-
-            j[pair.first] = asset;
-        }
-
-        std::ofstream file(libraryDir + "metadata.json");
-        if (file.is_open()) {
-            file << j.dump(4);
-            file.close();
-            std::cout << "[AssetManager] Metadata saved" << std::endl;
-        }
-    }
-
-    void AssetManager::LoadMetadata() {
-        std::string metaPath = libraryDir + "metadata.json";
-
-        if (!std::filesystem::exists(metaPath)) {
-            std::cout << "[AssetManager] No metadata found, starting fresh" << std::endl;
-            return;
-        }
-
-        std::ifstream file(metaPath);
-        if (!file.is_open()) {
-            std::cerr << "[AssetManager] Failed to load metadata" << std::endl;
-            return;
-        }
-
-        nlohmann::json j;
-        file >> j;
-        file.close();
-
-        for (auto& item : j.items()) {
-            AssetMetadata meta;
-            meta.sourcePath = item.value()["sourcePath"];
-            meta.libraryPath = item.value()["libraryPath"];
-            meta.type = item.value()["type"];
-
-            auto timepoint = item.value()["lastModified"].get<long long>();
-            meta.lastModified = std::filesystem::file_time_type(
-                std::filesystem::file_time_type::duration(timepoint)
-            );
-
-            assetDatabase[item.key()] = meta;
-        }
-
-        std::cout << "[AssetManager] Loaded metadata: "
-            << assetDatabase.size() << " assets" << std::endl;
     }
 
     std::string AssetManager::GetFileExtension(const std::string& filepath) {
@@ -334,13 +327,6 @@ namespace WizardEngine {
             return filepath.substr(pos + 1);
         }
         return "";
-    }
-
-    std::string AssetManager::GetRelativePath(const std::string& fullPath,
-        const std::string& basePath) {
-        std::filesystem::path full(fullPath);
-        std::filesystem::path base(basePath);
-        return std::filesystem::relative(full, base).string();
     }
 
 } // namespace WizardEngine

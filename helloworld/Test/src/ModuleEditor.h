@@ -1,5 +1,6 @@
 #pragma once
 #include "Module.h"
+#include "MetaFile.h"
 #include "imgui.h"
 #include <glad/glad.h>
 #include <string>
@@ -58,7 +59,7 @@ private:
     void OpenSaveSceneDialog();
     void OpenLoadSceneDialog();
 
-    void LoadModelFromWZD(const std::string& wzdPath);
+    void LoadModelFromWZD(const std::string& wzdPath, WizardEngine::AssetMetaData* metaData = nullptr);
     void LoadMeshFromWZM(const std::string& wzmPath);
     std::string GetFileExtension(const std::string& filepath);
 

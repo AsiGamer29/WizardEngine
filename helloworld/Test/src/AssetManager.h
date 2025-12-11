@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <vector>
 #include <filesystem>
+#include "MetaFile.h"
 
 namespace WizardEngine {
 
@@ -11,49 +12,38 @@ namespace WizardEngine {
         AssetManager();
         ~AssetManager();
 
-        // Initialize directories
         bool Initialize();
 
-        // Process a dropped/added file in Assets folder
+        // Process a file dropped/added to Assets folder
         bool ProcessAssetFile(const std::string& filepath);
 
-        // Check if asset needs reimport (source modified)
+        // Check if reimport is needed
         bool NeedsReimport(const std::string& assetPath);
 
         // Get library path for an asset
-        std::string GetLibraryPath(const std::string& assetPath, const std::string& extension);
+        std::string GetLibraryPath(const std::string& assetPath);
 
-        // Scan Assets folder for changes
+        // Get meta data for an asset
+        AssetMetaData* GetMetaData(const std::string& assetPath);
+
+        // Scan Assets folder
         void ScanAssetsFolder();
 
-        // Get all assets of a specific type
-        std::vector<std::string> GetAssetsByExtension(const std::string& extension);
-
-        // Print statistics
+        // Statistics
         void PrintStatistics();
 
     private:
         std::string assetsDir;
         std::string libraryDir;
 
-        struct AssetMetadata {
-            std::string sourcePath;
-            std::string libraryPath;
-            std::filesystem::file_time_type lastModified;
-            std::string type; // "mesh", "texture", "model"
-        };
+        // Cache of metadata (keyed by source file path)
+        std::unordered_map<std::string, AssetMetaData> metaCache;
 
-        std::unordered_map<std::string, AssetMetadata> assetDatabase;
-
-        bool ProcessMeshFile(const std::string& filepath);
-        bool ProcessTextureFile(const std::string& filepath);
         bool ProcessModelFile(const std::string& filepath);
+        bool ProcessTextureFile(const std::string& filepath);
 
         std::string GetFileExtension(const std::string& filepath);
-        std::string GetRelativePath(const std::string& fullPath, const std::string& basePath);
-
-        void SaveMetadata();
-        void LoadMetadata();
+        uint64_t GetFileTimestamp(const std::string& filepath);
     };
 
 } // namespace WizardEngine
