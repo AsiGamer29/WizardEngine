@@ -137,49 +137,46 @@ GameObject* ModuleScene::CreateGameObject(const char* name, GameObject* parent)
 
 void ModuleScene::DestroyGameObject(GameObject* gameObject)
 {
-    if (!gameObject) return;
+    if (!gameObject)
+    {
+        return;
+    }
 
-    // Si es el objeto seleccionado, deseleccionar
+    std::cout << "[ModuleScene] Destroying GameObject: " << gameObject->GetName() << std::endl;
+
+    // PRIMERO: Destruir todos los hijos recursivamente
+    std::vector<GameObject*> children = gameObject->GetChildren();
+    for (GameObject* child : children)
+    {
+        if (child)
+        {
+            DestroyGameObject(child);
+        }
+    }
+
+    // Si este objeto es el seleccionado, deseleccionar
     if (selectedGameObject == gameObject)
     {
         selectedGameObject = nullptr;
     }
 
-    // Eliminar de la lista de hijos del padre
-    if (gameObject->GetParent())
-    {
-        gameObject->GetParent()->RemoveChild(gameObject);
-    }
-
-    // Reparentar hijos al padre del objeto eliminado (o a null)
-    GameObject* parent = gameObject->GetParent();
-    const std::vector<GameObject*>& children = gameObject->GetChildren();
-
-    // Copiar la lista de hijos porque se modificará durante el bucle
-    std::vector<GameObject*> childrenCopy = children;
-
-    for (GameObject* child : childrenCopy)
-    {
-        if (child)
-        {
-            child->SetParent(parent);
-        }
-    }
-
-    // Eliminar de la lista principal
+    // Remover de la lista de todos los objetos
     auto it = std::find(allGameObjects.begin(), allGameObjects.end(), gameObject);
     if (it != allGameObjects.end())
     {
         allGameObjects.erase(it);
     }
 
-    // Liberar memoria
+    // Remover del padre (si tiene)
+    if (gameObject->GetParent())
+    {
+        gameObject->GetParent()->RemoveChild(gameObject);
+    }
+
+    // FINALMENTE: Eliminar el objeto
     delete gameObject;
 
-    // Actualizar AABBs
-    UpdateAllAABBs();
-
-    std::cout << "[ModuleScene] GameObject destroyed" << std::endl;
+    std::cout << "[ModuleScene] GameObject destroyed successfully" << std::endl;
 }
 
 void ModuleScene::ClearScene()
@@ -694,4 +691,191 @@ GameObject* ModuleScene::LoadModelFromLibrary(const std::string& libraryPath) {
 
     std::cout << "[ModuleScene] Model loaded successfully!" << std::endl;
     return rootObject;
+}
+
+GameObject* ModuleScene::DuplicateGameObject(GameObject* original)
+{
+    if (!original)
+    {
+        std::cerr << "[ModuleScene] Cannot duplicate null GameObject" << std::endl;
+        return nullptr;
+    }
+
+    std::cout << "[ModuleScene] === Starting duplication of: " << original->GetName() << " ===" << std::endl;
+
+    // Crear nuevo GameObject con nombre duplicado
+    std::string newName = std::string(original->GetName()) + "_Copy";
+    GameObject* duplicate = CreateGameObject(newName.c_str(), original->GetParent());
+
+    if (!duplicate)
+    {
+        std::cerr << "[ModuleScene] FAILED to create duplicate GameObject" << std::endl;
+        return nullptr;
+    }
+
+    // ===== PASO 1: Copiar Transform =====
+    ComponentTransform* originalTransform = original->GetComponent<ComponentTransform>();
+    ComponentTransform* duplicateTransform = duplicate->GetComponent<ComponentTransform>();
+
+    if (originalTransform && duplicateTransform)
+    {
+        duplicateTransform->SetPosition(originalTransform->GetPosition());
+        duplicateTransform->SetRotation(originalTransform->GetRotation());
+        duplicateTransform->SetScale(originalTransform->GetScale());
+        std::cout << "[ModuleScene]   - Transform copied" << std::endl;
+    }
+
+    // ===== PASO 2: Copiar Mesh =====
+    ComponentMesh* originalMesh = original->GetComponent<ComponentMesh>();
+    if (originalMesh && originalMesh->GetVertexCount() > 0)
+    {
+        std::cout << "[ModuleScene]   - Copying Mesh (vertices: " << originalMesh->GetVertexCount() << ")" << std::endl;
+
+        ComponentMesh* duplicateMesh = duplicate->GetComponent<ComponentMesh>();
+        if (!duplicateMesh)
+        {
+            duplicateMesh = static_cast<ComponentMesh*>(
+                duplicate->CreateComponent(ComponentType::MESH)
+                );
+        }
+
+        if (duplicateMesh)
+        {
+            try
+            {
+                nlohmann::json meshJson = originalMesh->SerializeMesh();
+                duplicateMesh->DeserializeMesh(meshJson);
+                std::cout << "[ModuleScene]   - Mesh copied successfully" << std::endl;
+            }
+            catch (const std::exception& e)
+            {
+                std::cerr << "[ModuleScene]   - ERROR copying mesh: " << e.what() << std::endl;
+            }
+        }
+    }
+    else
+    {
+        std::cout << "[ModuleScene]   - No mesh to copy" << std::endl;
+    }
+
+    // ===== PASO 3: Copiar Material =====
+    ComponentMaterial* originalMat = original->GetComponent<ComponentMaterial>();
+    if (originalMat)
+    {
+        std::cout << "[ModuleScene]   - Copying Material" << std::endl;
+
+        ComponentMaterial* duplicateMat = duplicate->GetComponent<ComponentMaterial>();
+        if (!duplicateMat)
+        {
+            duplicateMat = static_cast<ComponentMaterial*>(
+                duplicate->CreateComponent(ComponentType::MATERIAL)
+                );
+        }
+
+        if (duplicateMat)
+        {
+            const char* texPath = originalMat->GetTexturePath();
+
+            if (texPath && texPath[0] != '\0')
+            {
+                if (strcmp(texPath, "checkerboard_default") != 0)
+                {
+                    std::cout << "[ModuleScene]   - Loading texture: " << texPath << std::endl;
+                    duplicateMat->LoadTexture(texPath);
+                }
+                else
+                {
+                    std::cout << "[ModuleScene]   - Applying checkerboard" << std::endl;
+                    GLuint checkerTex = Texture::CreateCheckerboardTexture(512, 512, 32);
+                    duplicateMat->SetTexture(checkerTex, "checkerboard_default", 3);
+                }
+            }
+            else
+            {
+                std::cout << "[ModuleScene]   - No texture path, applying checkerboard" << std::endl;
+                GLuint checkerTex = Texture::CreateCheckerboardTexture(512, 512, 32);
+                duplicateMat->SetTexture(checkerTex, "checkerboard_default", 3);
+            }
+
+            // Copiar propiedades
+            duplicateMat->SetAlphaMode(originalMat->GetAlphaMode());
+            duplicateMat->SetAlphaCutoff(originalMat->GetAlphaCutoff());
+            duplicateMat->SetBlendMode(originalMat->GetBlendMode());
+
+            std::cout << "[ModuleScene]   - Material copied successfully" << std::endl;
+        }
+    }
+    else
+    {
+        std::cout << "[ModuleScene]   - No material to copy" << std::endl;
+    }
+
+    // ===== PASO 4: Actualizar AABB =====
+    duplicate->UpdateAABB();
+
+    // ===== PASO 5: Duplicar hijos recursivamente =====
+    const std::vector<GameObject*>& children = original->GetChildren();
+
+    if (children.size() > 0)
+    {
+        std::cout << "[ModuleScene]   - Duplicating " << children.size() << " children..." << std::endl;
+
+        int successCount = 0;
+        for (size_t i = 0; i < children.size(); i++)
+        {
+            GameObject* child = children[i];
+            if (!child)
+            {
+                std::cerr << "[ModuleScene]     - Child " << i << " is null, skipping" << std::endl;
+                continue;
+            }
+
+            std::cout << "[ModuleScene]     - Duplicating child " << (i + 1) << "/" << children.size()
+                << ": " << child->GetName() << std::endl;
+
+            GameObject* duplicatedChild = DuplicateGameObject(child);
+
+            if (duplicatedChild)
+            {
+                // Obtener transforms ANTES de cambiar el padre
+                ComponentTransform* childOriginalTransform = child->GetComponent<ComponentTransform>();
+
+                if (childOriginalTransform)
+                {
+                    glm::vec3 localPos = childOriginalTransform->GetPosition();
+                    glm::quat localRot = childOriginalTransform->GetRotation();
+                    glm::vec3 localScale = childOriginalTransform->GetScale();
+
+                    // Cambiar padre
+                    duplicatedChild->SetParent(duplicate);
+
+                    // Restaurar transform local
+                    ComponentTransform* childDuplicateTransform = duplicatedChild->GetComponent<ComponentTransform>();
+                    if (childDuplicateTransform)
+                    {
+                        childDuplicateTransform->SetPosition(localPos);
+                        childDuplicateTransform->SetRotation(localRot);
+                        childDuplicateTransform->SetScale(localScale);
+                    }
+                }
+                else
+                {
+                    duplicatedChild->SetParent(duplicate);
+                }
+
+                successCount++;
+                std::cout << "[ModuleScene]     - Child duplicated successfully" << std::endl;
+            }
+            else
+            {
+                std::cerr << "[ModuleScene]     - FAILED to duplicate child: " << child->GetName() << std::endl;
+            }
+        }
+
+        std::cout << "[ModuleScene]   - Children duplication complete: "
+            << successCount << "/" << children.size() << " successful" << std::endl;
+    }
+
+    std::cout << "[ModuleScene] === Duplication complete: " << duplicate->GetName() << " ===" << std::endl;
+    return duplicate;
 }

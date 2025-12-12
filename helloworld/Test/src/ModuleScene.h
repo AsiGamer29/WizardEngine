@@ -33,7 +33,7 @@ public:
     // Gestión de GameObjects
     GameObject* CreateGameObject(const char* name, GameObject* parent = nullptr);
     void DestroyGameObject(GameObject* gameObject);
-
+    GameObject* DuplicateGameObject(GameObject* original);
 
     // Carga desde Assimp (modelo 3D)
     void LoadModel(const char* path);

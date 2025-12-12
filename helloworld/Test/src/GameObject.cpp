@@ -31,10 +31,6 @@ GameObject::~GameObject()
     }
     components.clear();
 
-    for (GameObject* child : children)
-    {
-        delete child;
-    }
     children.clear();
 }
 
@@ -90,6 +86,11 @@ Component* GameObject::CreateComponent(ComponentType type)
 
 void GameObject::SetParent(GameObject* newParent)
 {
+    if (parent == newParent)
+    {
+        return;
+    }
+
     if (parent)
     {
         parent->RemoveChild(this);
@@ -100,6 +101,12 @@ void GameObject::SetParent(GameObject* newParent)
     if (parent)
     {
         parent->AddChild(this);
+    }
+
+    ComponentTransform* transform = GetComponent<ComponentTransform>();
+    if (transform)
+    {
+        transform->MarkGlobalDirty();
     }
 }
 

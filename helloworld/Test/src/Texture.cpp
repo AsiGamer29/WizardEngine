@@ -5,6 +5,9 @@
 #include <cstring>
 #include <GL/gl.h>
 
+std::unordered_map<std::string, Texture::TextureInfo> Texture::textureCache;
+std::unordered_map<unsigned int, std::string> Texture::idToPath;
+
 unsigned int Texture::CreateCheckerboardTexture(int width, int height, int cellSize)
 {
     int numChannels = 3;
@@ -94,6 +97,120 @@ TextureData Texture::LoadTextureWithInfo(const char* path)
     return result;
 }
 
+unsigned int Texture::LoadTextureManaged(const std::string& path)
+{
+    if (path.empty())
+    {
+        return 0;
+    }
+
+    auto it = textureCache.find(path);
+    if (it != textureCache.end())
+    {
+        it->second.referenceCount++;
+        std::cout << "[Texture] Reusing texture: " << path
+            << " (refs: " << it->second.referenceCount << ")" << std::endl;
+        return it->second.id;
+    }
+
+    TextureData texData = LoadTextureWithInfo(path.c_str());
+
+    if (texData.id == 0)
+    {
+        std::cerr << "[Texture] Failed to load texture: " << path << std::endl;
+        return 0;
+    }
+
+    TextureInfo info;
+    info.id = texData.id;
+    info.path = path;
+    info.referenceCount = 1;
+    info.width = texData.width;
+    info.height = texData.height;
+    info.channels = texData.channels;
+
+    textureCache[path] = info;
+    idToPath[texData.id] = path;
+
+    std::cout << "[Texture] Loaded managed texture: " << path
+        << " (" << info.width << "x" << info.height << ")" << std::endl;
+
+    return texData.id;
+}
+
+void Texture::ReleaseTexture(unsigned int textureID)
+{
+    if (textureID == 0)
+    {
+        return;
+    }
+
+    auto pathIt = idToPath.find(textureID);
+    if (pathIt == idToPath.end())
+    {
+        return;
+    }
+
+    ReleaseTexture(pathIt->second);
+}
+
+void Texture::ReleaseTexture(const std::string& path)
+{
+    if (path.empty())
+    {
+        return;
+    }
+
+    auto it = textureCache.find(path);
+    if (it == textureCache.end())
+    {
+        return;
+    }
+
+    it->second.referenceCount--;
+
+    std::cout << "[Texture] Released texture: " << path
+        << " (refs: " << it->second.referenceCount << ")" << std::endl;
+
+    if (it->second.referenceCount <= 0)
+    {
+        GLuint texID = it->second.id;
+        glDeleteTextures(1, &texID);
+
+        idToPath.erase(texID);
+        textureCache.erase(it);
+
+        std::cout << "[Texture] Deleted texture from GPU: " << path << std::endl;
+    }
+}
+
+int Texture::GetReferenceCount(unsigned int textureID)
+{
+    auto pathIt = idToPath.find(textureID);
+    if (pathIt != idToPath.end())
+    {
+        auto it = textureCache.find(pathIt->second);
+        if (it != textureCache.end())
+        {
+            return it->second.referenceCount;
+        }
+    }
+    return 0;
+}
+
+void Texture::ClearAllTextures()
+{
+    for (auto& pair : textureCache)
+    {
+        glDeleteTextures(1, &pair.second.id);
+    }
+
+    textureCache.clear();
+    idToPath.clear();
+
+    std::cout << "[Texture] Cleared all managed textures" << std::endl;
+}
+
 unsigned int Texture::LoadDDSTexture(const char* path)
 {
     std::ifstream file(path, std::ios::binary);
@@ -103,7 +220,6 @@ unsigned int Texture::LoadDDSTexture(const char* path)
         return 0;
     }
 
-    // Verify DDS magic number
     char magic[4];
     file.read(magic, 4);
     if (std::strncmp(magic, "DDS ", 4) != 0)
@@ -113,7 +229,6 @@ unsigned int Texture::LoadDDSTexture(const char* path)
         return 0;
     }
 
-    // Read DDS header (124 bytes)
     unsigned char header[124];
     file.read(reinterpret_cast<char*>(header), 124);
 
@@ -122,26 +237,24 @@ unsigned int Texture::LoadDDSTexture(const char* path)
     unsigned int mipMapCount = *(unsigned int*)&(header[24]);
     unsigned int fourCC = *(unsigned int*)&(header[80]);
 
-    // Default to at least one mipmap level
     if (mipMapCount == 0) mipMapCount = 1;
 
-    // Determine compression format
     GLenum format;
     unsigned int blockSize;
 
-    if (fourCC == 0x31545844) // DXT1
+    if (fourCC == 0x31545844)
     {
-        format = 0x83F1; // GL_COMPRESSED_RGBA_S3TC_DXT1_EXT
+        format = 0x83F1;
         blockSize = 8;
     }
-    else if (fourCC == 0x33545844) // DXT3
+    else if (fourCC == 0x33545844)
     {
-        format = 0x83F2; // GL_COMPRESSED_RGBA_S3TC_DXT3_EXT
+        format = 0x83F2;
         blockSize = 16;
     }
-    else if (fourCC == 0x35545844) // DXT5
+    else if (fourCC == 0x35545844)
     {
-        format = 0x83F3; // GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
+        format = 0x83F3;
         blockSize = 16;
     }
     else
@@ -151,7 +264,6 @@ unsigned int Texture::LoadDDSTexture(const char* path)
         return 0;
     }
 
-    // Calculate total buffer size for all mipmap levels
     unsigned int bufsize = ((width + 3) / 4) * ((height + 3) / 4) * blockSize;
 
     unsigned int totalSize = bufsize;
@@ -166,17 +278,14 @@ unsigned int Texture::LoadDDSTexture(const char* path)
         h /= 2;
     }
 
-    // Read compressed texture data
     unsigned char* buffer = new unsigned char[totalSize];
     file.read(reinterpret_cast<char*>(buffer), totalSize);
     file.close();
 
-    // Create OpenGL texture
     GLuint texID;
     glGenTextures(1, &texID);
     glBindTexture(GL_TEXTURE_2D, texID);
 
-    // Upload all mipmap levels
     unsigned int offset = 0;
     w = width;
     h = height;

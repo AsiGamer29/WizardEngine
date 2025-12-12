@@ -15,32 +15,57 @@ ComponentMaterial::~ComponentMaterial()
 
 void ComponentMaterial::LoadTexture(const char* path)
 {
-    CleanUp();
+    if (!path || path[0] == '\0')
+    {
+        std::cerr << "[Material] LoadTexture called with empty path" << std::endl;
+        return;
+    }
+
+    // Limpiar textura anterior
+    if (textureID != 0 && !texturePath.empty() && texturePath != "checkerboard_default")
+    {
+        Texture::ReleaseTexture(texturePath);
+        textureID = 0;
+    }
 
     texturePath = path;
 
-    TextureData texData = Texture::LoadTextureWithInfo(path);
+    // Cargar nueva textura con sistema de referencias
+    textureID = Texture::LoadTextureManaged(path);
 
-    textureID = texData.id;
-    width = texData.width;
-    height = texData.height;
-    channels = texData.channels;
-
-    if (channels == 4)
+    if (textureID != 0)
     {
-        alphaMode = AlphaMode::ALPHA_TEST;
-        alphaCutoff = 0.5f;
-        std::cout << "[Material] Auto-enabled ALPHA_TEST" << std::endl;
+        // Obtener info de la textura desde el cache
+        TextureData texData = Texture::LoadTextureWithInfo(path);
+        width = texData.width;
+        height = texData.height;
+        channels = texData.channels;
+
+        if (channels == 4)
+        {
+            alphaMode = AlphaMode::ALPHA_TEST;
+            alphaCutoff = 0.5f;
+            std::cout << "[Material] Auto-enabled ALPHA_TEST" << std::endl;
+        }
+        else
+        {
+            alphaMode = AlphaMode::OPAQUE;
+            std::cout << "[Material] Opaque texture" << std::endl;
+        }
     }
     else
     {
-        alphaMode = AlphaMode::OPAQUE;
-        std::cout << "[Material] Opaque texture" << std::endl;
+        std::cerr << "[Material] Failed to load texture: " << path << std::endl;
     }
 }
 
 void ComponentMaterial::SetTexture(GLuint texID, const char* path, int texChannels)
 {
+    if (textureID != 0 && !texturePath.empty())
+    {
+        Texture::ReleaseTexture(texturePath);
+    }
+
     textureID = texID;
     if (path && path[0] != '\0')
         texturePath = path;
@@ -171,10 +196,11 @@ void ComponentMaterial::OnEditor()
 
 void ComponentMaterial::CleanUp()
 {
-    if (textureID != 0)
+    if (textureID != 0 && !texturePath.empty())
     {
-        glDeleteTextures(1, &textureID);
+        Texture::ReleaseTexture(texturePath);
         textureID = 0;
+        texturePath.clear();
     }
 
     ClearOverrideTexture();

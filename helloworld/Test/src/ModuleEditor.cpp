@@ -161,17 +161,14 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
 
     bool node_open = ImGui::TreeNodeEx((void*)go, node_flags, "%s", go->GetName());
 
-    // Click izquierdo para seleccionar
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
     {
         app.moduleScene->SetSelectedGameObject(go);
         ModuleEditor::PushEnginePrintf("Selected GameObject: %s", go->GetName());
     }
 
-    // Click derecho para menu contextual (estilo Unity)
     if (ImGui::BeginPopupContextItem())
     {
-        // Auto-seleccionar al abrir el menu
         if (app.moduleScene->GetSelectedGameObject() != go)
         {
             app.moduleScene->SetSelectedGameObject(go);
@@ -180,16 +177,39 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
         ImGui::Text("GameObject: %s", go->GetName());
         ImGui::Separator();
 
+        if (ImGui::MenuItem("Duplicate", "Ctrl+D"))
+        {
+            if (app.moduleScene)
+            {
+                GameObject* duplicated = app.moduleScene->DuplicateGameObject(go);
+                if (duplicated)
+                {
+                    app.moduleScene->SetSelectedGameObject(duplicated);
+                    app.moduleScene->UpdateAllAABBs();
+                    ModuleEditor::PushEnginePrintf("GameObject duplicated: %s", duplicated->GetName());
+                }
+                else
+                {
+                    ModuleEditor::PushEngineLog("ERROR: Failed to duplicate GameObject");
+                }
+            }
+        }
+
         if (ImGui::MenuItem("Delete", "Supr"))
         {
             std::string name = go->GetName();
-            app.moduleScene->DestroyGameObject(go);
-            ModuleEditor::PushEnginePrintf("GameObject deleted: %s", name.c_str());
-        }
+            int childCount = go->GetChildren().size();
 
-        if (ImGui::MenuItem("Duplicate", "Ctrl + D"))
-        {
-            ModuleEditor::PushEngineLog("Duplicate not implemented yet");
+            app.moduleScene->DestroyGameObject(go);
+
+            if (childCount > 0)
+            {
+                ModuleEditor::PushEnginePrintf("GameObject deleted: %s (with %d children)", name.c_str(), childCount);
+            }
+            else
+            {
+                ModuleEditor::PushEnginePrintf("GameObject deleted: %s", name.c_str());
+            }
         }
 
         ImGui::Separator();
@@ -493,8 +513,41 @@ bool ModuleEditor::Update()
             if (selected)
             {
                 std::string name = selected->GetName();
+                int childCount = selected->GetChildren().size();
+
                 app.moduleScene->DestroyGameObject(selected);
-                PushEnginePrintf("GameObject deleted: %s", name.c_str());
+
+                if (childCount > 0)
+                {
+                    PushEnginePrintf("GameObject deleted: %s (with %d children)", name.c_str(), childCount);
+                }
+                else
+                {
+                    PushEnginePrintf("GameObject deleted: %s", name.c_str());
+                }
+            }
+        }
+    }
+
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false))
+    {
+        auto& app = Application::GetInstance();
+        if (app.moduleScene)
+        {
+            GameObject* selected = app.moduleScene->GetSelectedGameObject();
+            if (selected)
+            {
+                GameObject* duplicated = app.moduleScene->DuplicateGameObject(selected);
+                if (duplicated)
+                {
+                    app.moduleScene->SetSelectedGameObject(duplicated);
+                    app.moduleScene->UpdateAllAABBs();
+                    PushEnginePrintf("GameObject duplicated: %s", duplicated->GetName());
+                }
+                else
+                {
+                    PushEngineLog("ERROR: Failed to duplicate GameObject");
+                }
             }
         }
     }
@@ -631,13 +684,37 @@ bool ModuleEditor::Update()
             auto& app = Application::GetInstance();
             GameObject* selected = app.moduleScene ? app.moduleScene->GetSelectedGameObject() : nullptr;
 
-            if (ImGui::MenuItem("Delete Selected", "Del", false, selected != nullptr))
+            if (ImGui::MenuItem("Duplicate Selected", "Ctrl+D", false, selected != nullptr))
+            {
+                if (selected)
+                {
+                    GameObject* duplicated = app.moduleScene->DuplicateGameObject(selected);
+                    if (duplicated)
+                    {
+                        app.moduleScene->SetSelectedGameObject(duplicated);
+                        app.moduleScene->UpdateAllAABBs();
+                        PushEnginePrintf("GameObject duplicated: %s", duplicated->GetName());
+                    }
+                }
+            }
+
+            if (ImGui::MenuItem("Delete Selected", "Supr", false, selected != nullptr))
             {
                 if (selected)
                 {
                     std::string name = selected->GetName();
+                    int childCount = selected->GetChildren().size();
+
                     app.moduleScene->DestroyGameObject(selected);
-                    PushEnginePrintf("GameObject deleted: %s", name.c_str());
+
+                    if (childCount > 0)
+                    {
+                        PushEnginePrintf("GameObject deleted: %s (with %d children)", name.c_str(), childCount);
+                    }
+                    else
+                    {
+                        PushEnginePrintf("GameObject deleted: %s", name.c_str());
+                    }
                 }
             }
 
