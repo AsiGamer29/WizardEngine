@@ -142,9 +142,6 @@ static void CreateGeometryGameObject(const std::string& geometryType) {
     app.moduleScene->UpdateAllAABBs();
 }
 
-// ============================================
-// FUNCIÓN HELPER PARA DIBUJAR NODOS RECURSIVAMENTE
-// ============================================
 static void DrawGameObjectNode(GameObject* go, Application& app)
 {
     if (!go) return;
@@ -164,10 +161,48 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
 
     bool node_open = ImGui::TreeNodeEx((void*)go, node_flags, "%s", go->GetName());
 
-    if (ImGui::IsItemClicked())
+    // Click izquierdo para seleccionar
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
     {
         app.moduleScene->SetSelectedGameObject(go);
         ModuleEditor::PushEnginePrintf("Selected GameObject: %s", go->GetName());
+    }
+
+    // Click derecho para menu contextual (estilo Unity)
+    if (ImGui::BeginPopupContextItem())
+    {
+        // Auto-seleccionar al abrir el menu
+        if (app.moduleScene->GetSelectedGameObject() != go)
+        {
+            app.moduleScene->SetSelectedGameObject(go);
+        }
+
+        ImGui::Text("GameObject: %s", go->GetName());
+        ImGui::Separator();
+
+        if (ImGui::MenuItem("Delete", "Supr"))
+        {
+            std::string name = go->GetName();
+            app.moduleScene->DestroyGameObject(go);
+            ModuleEditor::PushEnginePrintf("GameObject deleted: %s", name.c_str());
+        }
+
+        if (ImGui::MenuItem("Duplicate", "Ctrl + D"))
+        {
+            ModuleEditor::PushEngineLog("Duplicate not implemented yet");
+        }
+
+        ImGui::Separator();
+
+        if (ImGui::MenuItem("Create Empty Child"))
+        {
+            static int childCounter = 0;
+            std::string childName = "Child_" + std::to_string(++childCounter);
+            GameObject* child = app.moduleScene->CreateGameObject(childName.c_str(), go);
+            ModuleEditor::PushEnginePrintf("Created child: %s", childName.c_str());
+        }
+
+        ImGui::EndPopup();
     }
 
     if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
@@ -197,36 +232,25 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
 
             if (isValid && draggedGO != go)
             {
-                // CRÍTICO: Guardar la posición global ANTES de cambiar el padre
                 ComponentTransform* draggedTransform = draggedGO->GetComponent<ComponentTransform>();
 
                 if (draggedTransform)
                 {
-                    // Obtener matriz global actual
                     glm::mat4 currentGlobalMatrix = draggedTransform->GetGlobalMatrix();
-
-                    // Cambiar el padre
                     draggedGO->SetParent(go);
-
-                    // Ahora calcular la posición local necesaria para mantener la misma posición global
                     ComponentTransform* newParentTransform = go->GetComponent<ComponentTransform>();
 
                     if (newParentTransform)
                     {
-                        // Matriz global del nuevo padre
                         glm::mat4 parentGlobalMatrix = newParentTransform->GetGlobalMatrix();
-
-                        // Calcular matriz local: local = inverse(parent) * global
                         glm::mat4 newLocalMatrix = glm::inverse(parentGlobalMatrix) * currentGlobalMatrix;
 
-                        // Descomponer la nueva matriz local
                         glm::vec3 newLocalPos, newLocalScale, skew;
                         glm::vec4 perspective;
                         glm::quat newLocalRot;
 
                         glm::decompose(newLocalMatrix, newLocalScale, newLocalRot, newLocalPos, skew, perspective);
 
-                        // Aplicar las nuevas coordenadas locales
                         draggedTransform->SetPosition(newLocalPos);
                         draggedTransform->SetRotation(newLocalRot);
                         draggedTransform->SetScale(newLocalScale);
@@ -236,7 +260,6 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
                     }
                     else
                     {
-                        // Si el padre no tiene transform (caso raro), solo hacer el reparenting
                         ModuleEditor::PushEnginePrintf("%s is now child of %s (WARNING: parent has no transform)",
                             draggedGO->GetName(), go->GetName());
                     }
@@ -245,7 +268,6 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
                 }
                 else
                 {
-                    // Si el objeto arrastrado no tiene transform, solo cambiar padre
                     draggedGO->SetParent(go);
                     ModuleEditor::PushEnginePrintf("%s is now child of %s (no transform to preserve)",
                         draggedGO->GetName(), go->GetName());
@@ -272,10 +294,6 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
         }
     }
 }
-
-// ============================================
-// IMPLEMENTACIÓN DE LA CLASE ModuleEditor
-// ============================================
 
 ModuleEditor::ModuleEditor()
 {
@@ -466,6 +484,21 @@ bool ModuleEditor::Update()
         NewScene();
     }
 
+    if (ImGui::IsKeyPressed(ImGuiKey_Delete, false))
+    {
+        auto& app = Application::GetInstance();
+        if (app.moduleScene)
+        {
+            GameObject* selected = app.moduleScene->GetSelectedGameObject();
+            if (selected)
+            {
+                std::string name = selected->GetName();
+                app.moduleScene->DestroyGameObject(selected);
+                PushEnginePrintf("GameObject deleted: %s", name.c_str());
+            }
+        }
+    }
+
     if (show_save_scene_popup)
         ShowSaveScenePopup();
 
@@ -591,6 +624,21 @@ bool ModuleEditor::Update()
             {
                 CreateEmptyGameObject();
                 PushEngineLog("Created empty GameObject");
+            }
+
+            ImGui::Separator();
+
+            auto& app = Application::GetInstance();
+            GameObject* selected = app.moduleScene ? app.moduleScene->GetSelectedGameObject() : nullptr;
+
+            if (ImGui::MenuItem("Delete Selected", "Del", false, selected != nullptr))
+            {
+                if (selected)
+                {
+                    std::string name = selected->GetName();
+                    app.moduleScene->DestroyGameObject(selected);
+                    PushEnginePrintf("GameObject deleted: %s", name.c_str());
+                }
             }
 
             ImGui::Separator();
@@ -722,24 +770,30 @@ bool ModuleEditor::Update()
         ImGui::End();
     }
 
-    // ===== VIEWPORT WINDOW - AHORA ES UNA PESTAÑA INDEPENDIENTE =====
+    // ===== VIEWPORT WINDOW =====
     if (show_viewport_window)
     {
-        // Dock the viewport into main dockspace on first use
-        ImGui::SetNextWindowDockID(ImGui::GetID("MainDockSpace"), ImGuiCond_FirstUseEver);
+        // Posicion: centro, ocupa 60% del ancho, 70% del alto
+        ImVec2 mainSize = ImGui::GetMainViewport()->Size;
+        ImVec2 mainPos = ImGui::GetMainViewport()->Pos;
+
+        float leftWidth = mainSize.x * 0.2f;
+        float rightWidth = mainSize.x * 0.2f;
+        float centerWidth = mainSize.x - leftWidth - rightWidth;
+        float topHeight = mainSize.y * 0.7f;
+        float bottomHeight = mainSize.y * 0.3f;
+
+        ImGui::SetNextWindowPos(ImVec2(mainPos.x + leftWidth, mainPos.y + 20));
+        ImGui::SetNextWindowSize(ImVec2(centerWidth, topHeight));
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
         if (ImGui::Begin("Scene Viewport", &show_viewport_window))
         {
-            // Obtener tamaño disponible en la ventana
             ImVec2 availableSize = ImGui::GetContentRegionAvail();
-
-            // CRÍTICO: Actualizar tracking del viewport
             viewportPos = ImGui::GetCursorScreenPos();
             viewportSize = availableSize;
 
-            // Redimensionar framebuffer si es necesario
             int newFBWidth = (int)availableSize.x;
             int newFBHeight = (int)availableSize.y;
 
@@ -749,18 +803,15 @@ bool ModuleEditor::Update()
                 sceneFBWidth = newFBWidth;
                 sceneFBHeight = newFBHeight;
 
-                // Redimensionar textura
                 glBindTexture(GL_TEXTURE_2D, sceneTexture);
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, sceneFBWidth, sceneFBHeight,
                     0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
 
-                // Redimensionar depth/stencil buffer
                 glBindRenderbuffer(GL_RENDERBUFFER, sceneRBO);
                 glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8,
                     sceneFBWidth, sceneFBHeight);
             }
 
-            // ===== RENDERIZAR ESCENA AL FRAMEBUFFER =====
             if (sceneFramebuffer != 0 && Application::GetInstance().moduleScene &&
                 sceneFBWidth > 0 && sceneFBHeight > 0)
             {
@@ -769,7 +820,6 @@ bool ModuleEditor::Update()
                 glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-                // Actualizar aspect ratio de la cámara
                 auto& app = Application::GetInstance();
                 if (app.camera && sceneFBWidth > 0 && sceneFBHeight > 0)
                 {
@@ -777,15 +827,11 @@ bool ModuleEditor::Update()
                     app.camera->setProjection(45.0f, aspect, 0.1f, 1000.0f);
                 }
 
-                // Renderizar escena
                 Application::GetInstance().moduleScene->RenderScene();
-
                 glBindFramebuffer(GL_FRAMEBUFFER, 0);
             }
 
-            // Dibujar textura en ImGui
             ImVec2 imagePos = ImGui::GetCursorScreenPos();
-
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
             draw_list->AddImage(
                 (ImTextureID)(intptr_t)sceneTexture,
@@ -795,24 +841,20 @@ bool ModuleEditor::Update()
                 ImVec2(1, 0)
             );
 
-            // Avanzar cursor
             ImGui::Dummy(availableSize);
 
             bool imageHovered = ImGui::IsItemHovered();
             bool imageClicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
             isMouseOverViewport = imageHovered;
 
-            // NUEVO: Actualizar el estado del viewport para Input
             auto& app = Application::GetInstance();
             if (app.input)
             {
                 app.input->SetViewportHovered(imageHovered);
             }
 
-            // ===== DIBUJAR GIZMO =====
             HandleGizmo();
 
-            // ===== MOUSE PICKING =====
             if (imageClicked && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver())
             {
                 auto& app = Application::GetInstance();
@@ -854,10 +896,18 @@ bool ModuleEditor::Update()
         ImGui::PopStyleVar();
     }
 
-    // Hierarchy window
+    // Hierarchy window - IZQUIERDA
     if (show_hierarchy_window)
     {
-        ImGui::SetNextWindowDockID(ImGui::GetID("MainDockSpace"), ImGuiCond_FirstUseEver);
+        ImVec2 mainSize = ImGui::GetMainViewport()->Size;
+        ImVec2 mainPos = ImGui::GetMainViewport()->Pos;
+
+        float leftWidth = mainSize.x * 0.2f;
+        float fullHeight = mainSize.y - 20;
+
+        ImGui::SetNextWindowPos(ImVec2(mainPos.x, mainPos.y + 20));
+        ImGui::SetNextWindowSize(ImVec2(leftWidth, fullHeight));
+
         ImGui::Begin("Hierarchy", &show_hierarchy_window);
 
         auto& app = Application::GetInstance();
@@ -865,16 +915,48 @@ bool ModuleEditor::Update()
         {
             const std::vector<GameObject*>& all = app.moduleScene->GetAllGameObjects();
 
-            // Dibujar solo los objetos raíz (sin padre)
             for (GameObject* go : all)
             {
                 if (!go) continue;
-
-                // Solo dibujar si NO tiene padre (es raíz)
                 if (go->GetParent() == nullptr)
                 {
                     DrawGameObjectNode(go, app);
                 }
+            }
+
+            // Menu contextual en area vacia (para crear nuevos GameObjects)
+            if (ImGui::BeginPopupContextWindow("HierarchyBgContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems))
+            {
+                if (ImGui::MenuItem("Create Empty"))
+                {
+                    CreateEmptyGameObject();
+                    ModuleEditor::PushEngineLog("Created empty GameObject");
+                }
+
+                ImGui::Separator();
+
+                if (ImGui::MenuItem("Cube"))
+                {
+                    CreateGeometryGameObject("Cube");
+                }
+                if (ImGui::MenuItem("Sphere"))
+                {
+                    CreateGeometryGameObject("Sphere");
+                }
+                if (ImGui::MenuItem("Cylinder"))
+                {
+                    CreateGeometryGameObject("Cylinder");
+                }
+                if (ImGui::MenuItem("Pyramid"))
+                {
+                    CreateGeometryGameObject("Pyramid");
+                }
+                if (ImGui::MenuItem("Plane"))
+                {
+                    CreateGeometryGameObject("Plane");
+                }
+
+                ImGui::EndPopup();
             }
         }
         else
@@ -885,10 +967,20 @@ bool ModuleEditor::Update()
         ImGui::End();
     }
 
-    // Inspector window - OCUPA TODA LA ALTURA DERECHA
+    // Inspector window - DERECHA
     if (show_inspector_window)
     {
-        ImGui::SetNextWindowDockID(ImGui::GetID("MainDockSpace"), ImGuiCond_FirstUseEver);
+        ImVec2 mainSize = ImGui::GetMainViewport()->Size;
+        ImVec2 mainPos = ImGui::GetMainViewport()->Pos;
+
+        float leftWidth = mainSize.x * 0.2f;
+        float centerWidth = mainSize.x * 0.6f;
+        float rightWidth = mainSize.x * 0.2f;
+        float fullHeight = mainSize.y - 20;
+
+        ImGui::SetNextWindowPos(ImVec2(mainPos.x + leftWidth + centerWidth, mainPos.y + 20));
+        ImGui::SetNextWindowSize(ImVec2(rightWidth, fullHeight));
+
         ImGui::Begin("Inspector", &show_inspector_window);
 
         auto& app = Application::GetInstance();
@@ -920,7 +1012,6 @@ bool ModuleEditor::Update()
             ImGui::Text("Selected: %s", selected->GetName());
             ImGui::Separator();
 
-            // ===== CONTROLES DE GIZMO =====
             if (ImGui::CollapsingHeader("Gizmo Controls", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 ImGui::Text("Operation Mode:");
@@ -967,7 +1058,6 @@ bool ModuleEditor::Update()
 
             ImGui::Separator();
 
-            // --- Transform Section ---
             if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 ComponentTransform* tr = selected->GetComponent<ComponentTransform>();
@@ -1004,7 +1094,6 @@ bool ModuleEditor::Update()
                 }
             }
 
-            // --- Mesh Section ---
             static bool show_normals = false;
             if (ImGui::CollapsingHeader("Mesh", ImGuiTreeNodeFlags_DefaultOpen))
             {
@@ -1028,7 +1117,6 @@ bool ModuleEditor::Update()
                 }
             }
 
-            // --- Material Section ---
             if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 ComponentMaterial* mat = selected->GetComponent<ComponentMaterial>();
@@ -1043,7 +1131,6 @@ bool ModuleEditor::Update()
 
                     ImGui::Separator();
 
-                    // === ALPHA MODE ===
                     const char* alphaModeNames[] = { "Opaque", "Alpha Test", "Alpha Blend" };
                     int currentMode = (int)mat->GetAlphaMode();
                     if (ImGui::Combo("Alpha Mode", &currentMode, alphaModeNames, 3))
@@ -1052,7 +1139,6 @@ bool ModuleEditor::Update()
                         PushEnginePrintf("Alpha mode changed to: %s", alphaModeNames[currentMode]);
                     }
 
-                    // === ALPHA BLEND CONTROLS ===
                     if (mat->GetAlphaMode() == AlphaMode::ALPHA_BLEND)
                     {
                         const char* blendModeNames[] = {
@@ -1069,7 +1155,6 @@ bool ModuleEditor::Update()
                             PushEnginePrintf("Blend mode changed to: %s", blendModeNames[currentBlend]);
                         }
 
-                        // Info sobre cada blend mode
                         ImGui::Spacing();
                         ImGui::TextWrapped("Blended objects are rendered back-to-front automatically.");
 
@@ -1102,7 +1187,6 @@ bool ModuleEditor::Update()
 
                     ImGui::Separator();
 
-                    // === TEXTURE PREVIEW ===
                     bool old = inspector_show_checkerboard;
                     ImGui::Checkbox("Use default checkerboard in scene", &inspector_show_checkerboard);
 
@@ -1139,9 +1223,20 @@ bool ModuleEditor::Update()
         ImGui::End();
     }
 
-    // Console window - PARTE INFERIOR, ENTRE HIERARCHY E INSPECTOR
+    // Console window - ABAJO
     if (show_console_window)
     {
+        ImVec2 mainSize = ImGui::GetMainViewport()->Size;
+        ImVec2 mainPos = ImGui::GetMainViewport()->Pos;
+
+        float leftWidth = mainSize.x * 0.2f;
+        float centerWidth = mainSize.x * 0.6f;
+        float topHeight = mainSize.y * 0.7f;
+        float bottomHeight = mainSize.y * 0.3f - 20;
+
+        ImGui::SetNextWindowPos(ImVec2(mainPos.x + leftWidth, mainPos.y + topHeight + 20));
+        ImGui::SetNextWindowSize(ImVec2(centerWidth, bottomHeight));
+
         ImGui::Begin("Console", &show_console_window);
 
         ImGui::Checkbox("Auto-scroll", &engine_log_auto_scroll);

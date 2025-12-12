@@ -137,24 +137,49 @@ GameObject* ModuleScene::CreateGameObject(const char* name, GameObject* parent)
 
 void ModuleScene::DestroyGameObject(GameObject* gameObject)
 {
-    if (!gameObject || gameObject == root)
-        return;
+    if (!gameObject) return;
 
-    // Eliminar de la lista global
+    // Si es el objeto seleccionado, deseleccionar
+    if (selectedGameObject == gameObject)
+    {
+        selectedGameObject = nullptr;
+    }
+
+    // Eliminar de la lista de hijos del padre
+    if (gameObject->GetParent())
+    {
+        gameObject->GetParent()->RemoveChild(gameObject);
+    }
+
+    // Reparentar hijos al padre del objeto eliminado (o a null)
+    GameObject* parent = gameObject->GetParent();
+    const std::vector<GameObject*>& children = gameObject->GetChildren();
+
+    // Copiar la lista de hijos porque se modificará durante el bucle
+    std::vector<GameObject*> childrenCopy = children;
+
+    for (GameObject* child : childrenCopy)
+    {
+        if (child)
+        {
+            child->SetParent(parent);
+        }
+    }
+
+    // Eliminar de la lista principal
     auto it = std::find(allGameObjects.begin(), allGameObjects.end(), gameObject);
     if (it != allGameObjects.end())
     {
         allGameObjects.erase(it);
     }
 
-    // Eliminar de su padre
-    if (gameObject->GetParent())
-    {
-        gameObject->GetParent()->RemoveChild(gameObject);
-    }
-
-    // Eliminar el GameObject (su destructor eliminará sus hijos)
+    // Liberar memoria
     delete gameObject;
+
+    // Actualizar AABBs
+    UpdateAllAABBs();
+
+    std::cout << "[ModuleScene] GameObject destroyed" << std::endl;
 }
 
 void ModuleScene::ClearScene()
