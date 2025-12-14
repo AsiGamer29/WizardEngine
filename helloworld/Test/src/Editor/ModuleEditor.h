@@ -39,11 +39,11 @@ public:
 
 private:
     bool show_demo_window = false;
-    bool show_test_window = false;
     bool show_about_window = false;
     bool show_console_window = true;
     bool show_hierarchy_window = true;
     bool show_inspector_window = true;
+    bool firstTimeLayout = true;
 
     // NUEVO: Variables para guardar/cargar escenas
     bool show_save_scene_popup = false;

@@ -341,6 +341,12 @@ bool ModuleEditor::Start()
 
     ImGui::StyleColorsDark();
 
+    ImGuiIO& io_init = ImGui::GetIO();
+    if (io_init.ConfigFlags & ImGuiConfigFlags_DockingEnable)
+    {
+        io_init.IniFilename = "imgui_layout.ini";
+    }
+
     auto& app = Application::GetInstance();
 
     if (app.window)
@@ -471,20 +477,20 @@ bool ModuleEditor::Update()
             | ImGuiWindowFlags_NoMove
             | ImGuiWindowFlags_NoBringToFrontOnFocus
             | ImGuiWindowFlags_NoNavFocus
-            | ImGuiWindowFlags_NoDecoration;
+            | ImGuiWindowFlags_NoDecoration
+            | ImGuiWindowFlags_NoDocking;
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::Begin("MainDockSpaceWindow", nullptr, host_flags);
-        ImGui::PopStyleVar(2);
+        ImGui::PopStyleVar(3);
 
         ImGuiID dockspace_id = ImGui::GetID("MainDockSpace");
-        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
 
         ImGui::End();
     }
-
-
 
     // ===== KEYBOARD SHORTCUTS =====
     ImGuiIO& io = ImGui::GetIO();
@@ -814,54 +820,19 @@ bool ModuleEditor::Update()
         ImGui::EndMainMenuBar();
     }
 
-    if (show_test_window)
-    {
-        ImGui::SetNextWindowPos(ImVec2(650, 50), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
-
-        ImGui::Begin("Test Window", &show_test_window);
-
-        ImGui::Text("=== IMGUI IS WORKING! ===");
-        ImGui::Separator();
-        ImGui::Text("Hello from ImGui!");
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
-            1000.0f / ImGui::GetIO().Framerate,
-            ImGui::GetIO().Framerate);
-
-        ImGui::Separator();
-
-        if (ImGui::Button("Toggle Demo Window"))
-        {
-            show_demo_window = !show_demo_window;
-            PushEnginePrintf("Demo Window %s", show_demo_window ? "opened" : "closed");
-        }
-
-        ImGui::Checkbox("Show Demo Window", &show_demo_window);
-
-        if (!requested_geometry.empty())
-        {
-            ImGui::Separator();
-            ImGui::Text("Last requested geometry: %s", requested_geometry.c_str());
-        }
-
-        ImGui::End();
-    }
-
     // ===== VIEWPORT WINDOW =====
     if (show_viewport_window)
     {
-        // Posicion: centro, ocupa 60% del ancho, 70% del alto
+        // Establecer posición y tamaño inicial solo la primera vez
         ImVec2 mainSize = ImGui::GetMainViewport()->Size;
         ImVec2 mainPos = ImGui::GetMainViewport()->Pos;
 
         float leftWidth = mainSize.x * 0.2f;
         float rightWidth = mainSize.x * 0.2f;
-        float centerWidth = mainSize.x - leftWidth - rightWidth;
         float topHeight = mainSize.y * 0.7f;
-        float bottomHeight = mainSize.y * 0.3f;
 
-        ImGui::SetNextWindowPos(ImVec2(mainPos.x + leftWidth, mainPos.y + 20));
-        ImGui::SetNextWindowSize(ImVec2(centerWidth, topHeight));
+        ImGui::SetNextWindowPos(ImVec2(mainPos.x + leftWidth, mainPos.y + 20), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(mainSize.x - leftWidth - rightWidth, topHeight), ImGuiCond_FirstUseEver);
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
@@ -973,78 +944,76 @@ bool ModuleEditor::Update()
         ImGui::PopStyleVar();
     }
 
-    // Hierarchy window - IZQUIERDA
+    // Hierarchy window
     if (show_hierarchy_window)
     {
         ImVec2 mainSize = ImGui::GetMainViewport()->Size;
         ImVec2 mainPos = ImGui::GetMainViewport()->Pos;
 
         float leftWidth = mainSize.x * 0.2f;
-        float fullHeight = mainSize.y - 20;
 
-        ImGui::SetNextWindowPos(ImVec2(mainPos.x, mainPos.y + 20));
-        ImGui::SetNextWindowSize(ImVec2(leftWidth, fullHeight));
+        ImGui::SetNextWindowPos(ImVec2(mainPos.x, mainPos.y + 20), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(leftWidth, mainSize.y - 20), ImGuiCond_FirstUseEver);
 
-        ImGui::Begin("Hierarchy", &show_hierarchy_window);
-
-        auto& app = Application::GetInstance();
-        if (app.moduleScene)
+        if (ImGui::Begin("Hierarchy", &show_hierarchy_window))
         {
-            const std::vector<GameObject*>& all = app.moduleScene->GetAllGameObjects();
-
-            for (GameObject* go : all)
+            auto& app = Application::GetInstance();
+            if (app.moduleScene)
             {
-                if (!go) continue;
-                if (go->GetParent() == nullptr)
+                const std::vector<GameObject*>& all = app.moduleScene->GetAllGameObjects();
+
+                for (GameObject* go : all)
                 {
-                    DrawGameObjectNode(go, app);
+                    if (!go) continue;
+                    if (go->GetParent() == nullptr)
+                    {
+                        DrawGameObjectNode(go, app);
+                    }
+                }
+
+                if (ImGui::BeginPopupContextWindow("HierarchyBgContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems))
+                {
+                    if (ImGui::MenuItem("Create Empty"))
+                    {
+                        CreateEmptyGameObject();
+                        ModuleEditor::PushEngineLog("Created empty GameObject");
+                    }
+
+                    ImGui::Separator();
+
+                    if (ImGui::MenuItem("Cube"))
+                    {
+                        CreateGeometryGameObject("Cube");
+                    }
+                    if (ImGui::MenuItem("Sphere"))
+                    {
+                        CreateGeometryGameObject("Sphere");
+                    }
+                    if (ImGui::MenuItem("Cylinder"))
+                    {
+                        CreateGeometryGameObject("Cylinder");
+                    }
+                    if (ImGui::MenuItem("Pyramid"))
+                    {
+                        CreateGeometryGameObject("Pyramid");
+                    }
+                    if (ImGui::MenuItem("Plane"))
+                    {
+                        CreateGeometryGameObject("Plane");
+                    }
+
+                    ImGui::EndPopup();
                 }
             }
-
-            // Menu contextual en area vacia (para crear nuevos GameObjects)
-            if (ImGui::BeginPopupContextWindow("HierarchyBgContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems))
+            else
             {
-                if (ImGui::MenuItem("Create Empty"))
-                {
-                    CreateEmptyGameObject();
-                    ModuleEditor::PushEngineLog("Created empty GameObject");
-                }
-
-                ImGui::Separator();
-
-                if (ImGui::MenuItem("Cube"))
-                {
-                    CreateGeometryGameObject("Cube");
-                }
-                if (ImGui::MenuItem("Sphere"))
-                {
-                    CreateGeometryGameObject("Sphere");
-                }
-                if (ImGui::MenuItem("Cylinder"))
-                {
-                    CreateGeometryGameObject("Cylinder");
-                }
-                if (ImGui::MenuItem("Pyramid"))
-                {
-                    CreateGeometryGameObject("Pyramid");
-                }
-                if (ImGui::MenuItem("Plane"))
-                {
-                    CreateGeometryGameObject("Plane");
-                }
-
-                ImGui::EndPopup();
+                ImGui::Text("ModuleScene not available");
             }
         }
-        else
-        {
-            ImGui::Text("ModuleScene not available");
-        }
-
         ImGui::End();
     }
 
-    // Inspector window - DERECHA
+    // Inspector window (Unity-style, dockable and resizable)
     if (show_inspector_window)
     {
         ImVec2 mainSize = ImGui::GetMainViewport()->Size;
@@ -1053,254 +1022,253 @@ bool ModuleEditor::Update()
         float leftWidth = mainSize.x * 0.2f;
         float centerWidth = mainSize.x * 0.6f;
         float rightWidth = mainSize.x * 0.2f;
-        float fullHeight = mainSize.y - 20;
 
-        ImGui::SetNextWindowPos(ImVec2(mainPos.x + leftWidth + centerWidth, mainPos.y + 20));
-        ImGui::SetNextWindowSize(ImVec2(rightWidth, fullHeight));
+        ImGui::SetNextWindowPos(ImVec2(mainPos.x + leftWidth + centerWidth, mainPos.y + 20), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(rightWidth, mainSize.y - 20), ImGuiCond_FirstUseEver);
 
-        ImGui::Begin("Inspector", &show_inspector_window);
-
-        auto& app = Application::GetInstance();
-        GameObject* selected = nullptr;
-        if (app.moduleScene)
-            selected = app.moduleScene->GetSelectedGameObject();
-
-        if ((void*)selected != inspectorOverrideTarget && inspectorOverrideTarget != nullptr)
+        if (ImGui::Begin("Inspector", &show_inspector_window))
         {
-            GameObject* prev = (GameObject*)inspectorOverrideTarget;
-            if (prev)
+            auto& app = Application::GetInstance();
+            GameObject* selected = nullptr;
+            if (app.moduleScene)
+                selected = app.moduleScene->GetSelectedGameObject();
+
+            if ((void*)selected != inspectorOverrideTarget && inspectorOverrideTarget != nullptr)
             {
-                ComponentMaterial* prevMat = prev->GetComponent<ComponentMaterial>();
-                if (prevMat)
+                GameObject* prev = (GameObject*)inspectorOverrideTarget;
+                if (prev)
                 {
-                    prevMat->ClearOverrideTexture();
+                    ComponentMaterial* prevMat = prev->GetComponent<ComponentMaterial>();
+                    if (prevMat)
+                    {
+                        prevMat->ClearOverrideTexture();
+                    }
                 }
+                inspectorOverrideTarget = nullptr;
+                inspector_show_checkerboard = false;
             }
-            inspectorOverrideTarget = nullptr;
-            inspector_show_checkerboard = false;
-        }
 
-        if (!selected)
-        {
-            ImGui::TextDisabled("No GameObject selected");
-        }
-        else
-        {
-            ImGui::Text("Selected: %s", selected->GetName());
-            ImGui::Separator();
-
-            if (ImGui::CollapsingHeader("Gizmo Controls", ImGuiTreeNodeFlags_DefaultOpen))
+            if (!selected)
             {
-                ImGui::Text("Operation Mode:");
-
-                if (ImGui::RadioButton("Translate (W)", currentGizmoOperation == GizmoOperation::TRANSLATE))
-                {
-                    currentGizmoOperation = GizmoOperation::TRANSLATE;
-                }
-                ImGui::SameLine();
-                if (ImGui::RadioButton("Rotate (E)", currentGizmoOperation == GizmoOperation::ROTATE))
-                {
-                    currentGizmoOperation = GizmoOperation::ROTATE;
-                }
-                ImGui::SameLine();
-                if (ImGui::RadioButton("Scale (R)", currentGizmoOperation == GizmoOperation::SCALE))
-                {
-                    currentGizmoOperation = GizmoOperation::SCALE;
-                }
-
+                ImGui::TextDisabled("No GameObject selected");
+            }
+            else
+            {
+                ImGui::Text("Selected: %s", selected->GetName());
                 ImGui::Separator();
 
-                ImGui::Text("Coordinate Space:");
-                if (ImGui::RadioButton("World", currentGizmoMode == GizmoMode::WORLD))
+                if (ImGui::CollapsingHeader("Gizmo Controls", ImGuiTreeNodeFlags_DefaultOpen))
                 {
-                    currentGizmoMode = GizmoMode::WORLD;
-                }
-                ImGui::SameLine();
-                if (ImGui::RadioButton("Local", currentGizmoMode == GizmoMode::LOCAL))
-                {
-                    currentGizmoMode = GizmoMode::LOCAL;
-                }
+                    ImGui::Text("Operation Mode:");
 
-                ImGui::Separator();
-
-                ImGui::Checkbox("Use Snap", &useSnap);
-
-                if (useSnap)
-                {
-                    ImGui::DragFloat("Translate Snap", &snapValues[0], 0.1f, 0.01f, 10.0f);
-                    ImGui::DragFloat("Rotate Snap (deg)", &snapValues[1], 1.0f, 1.0f, 90.0f);
-                    ImGui::DragFloat("Scale Snap", &snapValues[2], 0.01f, 0.01f, 1.0f);
-                }
-            }
-
-            ImGui::Separator();
-
-            if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
-            {
-                ComponentTransform* tr = selected->GetComponent<ComponentTransform>();
-                if (tr)
-                {
-                    glm::vec3 pos = tr->GetPosition();
-                    glm::vec3 scl = tr->GetScale();
-                    glm::quat rotQ = tr->GetRotation();
-                    glm::vec3 euler = glm::degrees(glm::eulerAngles(rotQ));
-
-                    float posArr[3] = { pos.x, pos.y, pos.z };
-                    if (ImGui::InputFloat3("Position", posArr))
+                    if (ImGui::RadioButton("Translate (W)", currentGizmoOperation == GizmoOperation::TRANSLATE))
                     {
-                        tr->SetPosition(glm::vec3(posArr[0], posArr[1], posArr[2]));
+                        currentGizmoOperation = GizmoOperation::TRANSLATE;
                     }
-
-                    float rotArr[3] = { euler.x, euler.y, euler.z };
-                    if (ImGui::InputFloat3("Rotation", rotArr))
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("Rotate (E)", currentGizmoOperation == GizmoOperation::ROTATE))
                     {
-                        glm::vec3 rads = glm::radians(glm::vec3(rotArr[0], rotArr[1], rotArr[2]));
-                        glm::quat newQ = glm::quat(rads);
-                        tr->SetRotation(newQ);
+                        currentGizmoOperation = GizmoOperation::ROTATE;
                     }
-
-                    float sclArr[3] = { scl.x, scl.y, scl.z };
-                    if (ImGui::InputFloat3("Scale", sclArr))
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("Scale (R)", currentGizmoOperation == GizmoOperation::SCALE))
                     {
-                        tr->SetScale(glm::vec3(sclArr[0], sclArr[1], sclArr[2]));
-                    }
-                }
-                else
-                {
-                    ImGui::TextDisabled("No Transform component.");
-                }
-            }
-
-            static bool show_normals = false;
-            if (ImGui::CollapsingHeader("Mesh", ImGuiTreeNodeFlags_DefaultOpen))
-            {
-                ComponentMesh* mesh = selected->GetComponent<ComponentMesh>();
-                if (mesh)
-                {
-                    ImGui::Text("Vertices: %d", (int)mesh->GetVertexCount());
-                    ImGui::Text("Indices: %d", (int)mesh->GetIndexCount());
-                    ImGui::Text("Triangles: %d", (int)mesh->GetIndexCount() / 3);
-
-                    ImGui::Checkbox("Show Normals", &show_normals);
-
-                    if (app.moduleScene)
-                    {
-                        app.moduleScene->SetDebugShowNormals(show_normals);
-                    }
-                }
-                else
-                {
-                    ImGui::TextDisabled("No Mesh component.");
-                }
-            }
-
-            if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen))
-            {
-                ComponentMaterial* mat = selected->GetComponent<ComponentMaterial>();
-                if (mat)
-                {
-                    const char* path = mat->GetTexturePath();
-                    int w = mat->GetWidth();
-                    int h = mat->GetHeight();
-
-                    ImGui::Text("Path: %s", path ? path : "(none)");
-                    ImGui::Text("Size: %dx%d", w, h);
-
-                    ImGui::Separator();
-
-                    const char* alphaModeNames[] = { "Opaque", "Alpha Test", "Alpha Blend" };
-                    int currentMode = (int)mat->GetAlphaMode();
-                    if (ImGui::Combo("Alpha Mode", &currentMode, alphaModeNames, 3))
-                    {
-                        mat->SetAlphaMode((AlphaMode)currentMode);
-                        PushEnginePrintf("Alpha mode changed to: %s", alphaModeNames[currentMode]);
-                    }
-
-                    if (mat->GetAlphaMode() == AlphaMode::ALPHA_BLEND)
-                    {
-                        const char* blendModeNames[] = {
-                            "Standard",
-                            "Additive",
-                            "Multiply",
-                            "Screen",
-                            "Premultiplied"
-                        };
-                        int currentBlend = (int)mat->GetBlendMode();
-                        if (ImGui::Combo("Blend Mode", &currentBlend, blendModeNames, 5))
-                        {
-                            mat->SetBlendMode((BlendMode)currentBlend);
-                            PushEnginePrintf("Blend mode changed to: %s", blendModeNames[currentBlend]);
-                        }
-
-                        ImGui::Spacing();
-                        ImGui::TextWrapped("Blended objects are rendered back-to-front automatically.");
-
-                        ImGui::Spacing();
-                        ImGui::Text("Blend Mode Info:");
-                        switch (mat->GetBlendMode())
-                        {
-                        case BlendMode::STANDARD:
-                            ImGui::BulletText("Standard transparency");
-                            ImGui::BulletText("Formula: SrcAlpha + (1-SrcAlpha)*Dst");
-                            break;
-                        case BlendMode::ADDITIVE:
-                            ImGui::BulletText("Additive blending (glow effect)");
-                            ImGui::BulletText("Formula: SrcAlpha*Src + Dst");
-                            break;
-                        case BlendMode::MULTIPLY:
-                            ImGui::BulletText("Multiply blending (darken)");
-                            ImGui::BulletText("Formula: Dst * Src");
-                            break;
-                        case BlendMode::SCREEN:
-                            ImGui::BulletText("Screen blending (lighten)");
-                            ImGui::BulletText("Formula: 1 - (1-Src)*(1-Dst)");
-                            break;
-                        case BlendMode::PREMULTIPLIED:
-                            ImGui::BulletText("Premultiplied alpha");
-                            ImGui::BulletText("Formula: Src + (1-SrcAlpha)*Dst");
-                            break;
-                        }
+                        currentGizmoOperation = GizmoOperation::SCALE;
                     }
 
                     ImGui::Separator();
 
-                    bool old = inspector_show_checkerboard;
-                    ImGui::Checkbox("Use default checkerboard in scene", &inspector_show_checkerboard);
-
-                    if (inspector_show_checkerboard != old)
+                    ImGui::Text("Coordinate Space:");
+                    if (ImGui::RadioButton("World", currentGizmoMode == GizmoMode::WORLD))
                     {
-                        if (inspector_show_checkerboard)
+                        currentGizmoMode = GizmoMode::WORLD;
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("Local", currentGizmoMode == GizmoMode::LOCAL))
+                    {
+                        currentGizmoMode = GizmoMode::LOCAL;
+                    }
+
+                    ImGui::Separator();
+
+                    ImGui::Checkbox("Use Snap", &useSnap);
+
+                    if (useSnap)
+                    {
+                        ImGui::DragFloat("Translate Snap", &snapValues[0], 0.1f, 0.01f, 10.0f);
+                        ImGui::DragFloat("Rotate Snap (deg)", &snapValues[1], 1.0f, 1.0f, 90.0f);
+                        ImGui::DragFloat("Scale Snap", &snapValues[2], 0.01f, 0.01f, 1.0f);
+                    }
+                }
+
+                ImGui::Separator();
+
+                if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    ComponentTransform* tr = selected->GetComponent<ComponentTransform>();
+                    if (tr)
+                    {
+                        glm::vec3 pos = tr->GetPosition();
+                        glm::vec3 scl = tr->GetScale();
+                        glm::quat rotQ = tr->GetRotation();
+                        glm::vec3 euler = glm::degrees(glm::eulerAngles(rotQ));
+
+                        float posArr[3] = { pos.x, pos.y, pos.z };
+                        if (ImGui::InputFloat3("Position", posArr))
                         {
-                            if (inspectorCheckerTex == 0)
+                            tr->SetPosition(glm::vec3(posArr[0], posArr[1], posArr[2]));
+                        }
+
+                        float rotArr[3] = { euler.x, euler.y, euler.z };
+                        if (ImGui::InputFloat3("Rotation", rotArr))
+                        {
+                            glm::vec3 rads = glm::radians(glm::vec3(rotArr[0], rotArr[1], rotArr[2]));
+                            glm::quat newQ = glm::quat(rads);
+                            tr->SetRotation(newQ);
+                        }
+
+                        float sclArr[3] = { scl.x, scl.y, scl.z };
+                        if (ImGui::InputFloat3("Scale", sclArr))
+                        {
+                            tr->SetScale(glm::vec3(sclArr[0], sclArr[1], sclArr[2]));
+                        }
+                    }
+                    else
+                    {
+                        ImGui::TextDisabled("No Transform component.");
+                    }
+                }
+
+                static bool show_normals = false;
+                if (ImGui::CollapsingHeader("Mesh", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    ComponentMesh* mesh = selected->GetComponent<ComponentMesh>();
+                    if (mesh)
+                    {
+                        ImGui::Text("Vertices: %d", (int)mesh->GetVertexCount());
+                        ImGui::Text("Indices: %d", (int)mesh->GetIndexCount());
+                        ImGui::Text("Triangles: %d", (int)mesh->GetIndexCount() / 3);
+
+                        ImGui::Checkbox("Show Normals", &show_normals);
+
+                        if (app.moduleScene)
+                        {
+                            app.moduleScene->SetDebugShowNormals(show_normals);
+                        }
+                    }
+                    else
+                    {
+                        ImGui::TextDisabled("No Mesh component.");
+                    }
+                }
+
+                if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    ComponentMaterial* mat = selected->GetComponent<ComponentMaterial>();
+                    if (mat)
+                    {
+                        const char* path = mat->GetTexturePath();
+                        int w = mat->GetWidth();
+                        int h = mat->GetHeight();
+
+                        ImGui::Text("Path: %s", path ? path : "(none)");
+                        ImGui::Text("Size: %dx%d", w, h);
+
+                        ImGui::Separator();
+
+                        const char* alphaModeNames[] = { "Opaque", "Alpha Test", "Alpha Blend" };
+                        int currentMode = (int)mat->GetAlphaMode();
+                        if (ImGui::Combo("Alpha Mode", &currentMode, alphaModeNames, 3))
+                        {
+                            mat->SetAlphaMode((AlphaMode)currentMode);
+                            PushEnginePrintf("Alpha mode changed to: %s", alphaModeNames[currentMode]);
+                        }
+
+                        if (mat->GetAlphaMode() == AlphaMode::ALPHA_BLEND)
+                        {
+                            const char* blendModeNames[] = {
+                                "Standard",
+                                "Additive",
+                                "Multiply",
+                                "Screen",
+                                "Premultiplied"
+                            };
+                            int currentBlend = (int)mat->GetBlendMode();
+                            if (ImGui::Combo("Blend Mode", &currentBlend, blendModeNames, 5))
                             {
-                                inspectorCheckerTex = Texture::CreateCheckerboardTexture(512, 512, 32);
+                                mat->SetBlendMode((BlendMode)currentBlend);
+                                PushEnginePrintf("Blend mode changed to: %s", blendModeNames[currentBlend]);
                             }
 
-                            mat->SetOverrideTexture(inspectorCheckerTex, false);
-                            inspectorOverrideTarget = (void*)selected;
-                        }
-                        else
-                        {
-                            mat->ClearOverrideTexture();
-                            inspectorOverrideTarget = nullptr;
-                        }
-                    }
+                            ImGui::Spacing();
+                            ImGui::TextWrapped("Blended objects are rendered back-to-front automatically.");
 
-                    GLuint previewTex = mat->GetTextureID();
-                    ImGui::Text("Texture Preview:");
-                    ImGui::Image((ImTextureID)(intptr_t)previewTex, ImVec2(128, 128));
-                }
-                else
-                {
-                    ImGui::TextDisabled("No Material component.");
+                            ImGui::Spacing();
+                            ImGui::Text("Blend Mode Info:");
+                            switch (mat->GetBlendMode())
+                            {
+                            case BlendMode::STANDARD:
+                                ImGui::BulletText("Standard transparency");
+                                ImGui::BulletText("Formula: SrcAlpha + (1-SrcAlpha)*Dst");
+                                break;
+                            case BlendMode::ADDITIVE:
+                                ImGui::BulletText("Additive blending (glow effect)");
+                                ImGui::BulletText("Formula: SrcAlpha*Src + Dst");
+                                break;
+                            case BlendMode::MULTIPLY:
+                                ImGui::BulletText("Multiply blending (darken)");
+                                ImGui::BulletText("Formula: Dst * Src");
+                                break;
+                            case BlendMode::SCREEN:
+                                ImGui::BulletText("Screen blending (lighten)");
+                                ImGui::BulletText("Formula: 1 - (1-Src)*(1-Dst)");
+                                break;
+                            case BlendMode::PREMULTIPLIED:
+                                ImGui::BulletText("Premultiplied alpha");
+                                ImGui::BulletText("Formula: Src + (1-SrcAlpha)*Dst");
+                                break;
+                            }
+                        }
+
+                        ImGui::Separator();
+
+                        bool old = inspector_show_checkerboard;
+                        ImGui::Checkbox("Use default checkerboard in scene", &inspector_show_checkerboard);
+
+                        if (inspector_show_checkerboard != old)
+                        {
+                            if (inspector_show_checkerboard)
+                            {
+                                if (inspectorCheckerTex == 0)
+                                {
+                                    inspectorCheckerTex = Texture::CreateCheckerboardTexture(512, 512, 32);
+                                }
+
+                                mat->SetOverrideTexture(inspectorCheckerTex, false);
+                                inspectorOverrideTarget = (void*)selected;
+                            }
+                            else
+                            {
+                                mat->ClearOverrideTexture();
+                                inspectorOverrideTarget = nullptr;
+                            }
+                        }
+
+                        GLuint previewTex = mat->GetTextureID();
+                        ImGui::Text("Texture Preview:");
+                        ImGui::Image((ImTextureID)(intptr_t)previewTex, ImVec2(128, 128));
+                    }
+                    else
+                    {
+                        ImGui::TextDisabled("No Material component.");
+                    }
                 }
             }
         }
-
         ImGui::End();
     }
 
-    // Console window - ABAJO
+    // Console window
     if (show_console_window)
     {
         ImVec2 mainSize = ImGui::GetMainViewport()->Size;
@@ -1309,29 +1277,28 @@ bool ModuleEditor::Update()
         float leftWidth = mainSize.x * 0.2f;
         float centerWidth = mainSize.x * 0.6f;
         float topHeight = mainSize.y * 0.7f;
-        float bottomHeight = mainSize.y * 0.3f - 20;
 
-        ImGui::SetNextWindowPos(ImVec2(mainPos.x + leftWidth, mainPos.y + topHeight + 20));
-        ImGui::SetNextWindowSize(ImVec2(centerWidth, bottomHeight));
+        ImGui::SetNextWindowPos(ImVec2(mainPos.x + leftWidth, mainPos.y + topHeight + 20), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(centerWidth, mainSize.y - topHeight - 20), ImGuiCond_FirstUseEver);
 
-        ImGui::Begin("Console", &show_console_window);
-
-        ImGui::Checkbox("Auto-scroll", &engine_log_auto_scroll);
-
-        ImGui::Separator();
-
-        ImGui::BeginChild("ConsoleRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+        if (ImGui::Begin("Console", &show_console_window))
         {
-            std::lock_guard<std::mutex> lock(engine_log_mutex);
-            for (const auto& line : engine_log)
-            {
-                ImGui::TextUnformatted(line.c_str());
-            }
-            if (engine_log_auto_scroll)
-                ImGui::SetScrollHereY(1.0f);
-        }
-        ImGui::EndChild();
+            ImGui::Checkbox("Auto-scroll", &engine_log_auto_scroll);
 
+            ImGui::Separator();
+
+            ImGui::BeginChild("ConsoleRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+            {
+                std::lock_guard<std::mutex> lock(engine_log_mutex);
+                for (const auto& line : engine_log)
+                {
+                    ImGui::TextUnformatted(line.c_str());
+                }
+                if (engine_log_auto_scroll)
+                    ImGui::SetScrollHereY(1.0f);
+            }
+            ImGui::EndChild();
+        }
         ImGui::End();
     }
 
