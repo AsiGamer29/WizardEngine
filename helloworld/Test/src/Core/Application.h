@@ -24,6 +24,8 @@ public:
     std::shared_ptr<ModuleScene> moduleScene;
     std::shared_ptr<WizardEngine::AssetManager> assetManager;
 
+
+
     bool Awake();
     bool Start();
     bool Update();
@@ -45,6 +47,8 @@ private:
     bool PreUpdate();
     bool DoUpdate();
     bool PostUpdate();
+
+    void AssignStreetTextures();
 
     std::vector<std::shared_ptr<Module>> moduleList;
     bool isRunning;

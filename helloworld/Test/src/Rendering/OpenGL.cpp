@@ -353,53 +353,6 @@ bool OpenGL::Start()
     gridShader = new Shader(gridVert, gridFrag);
     CreateGrid(20);
 
-    try
-    {
-        auto& app = Application::GetInstance();
-        app.moduleScene->LoadModel("../Assets/Models/BakerHouse.fbx");
-
-        GameObject* root = app.moduleScene->GetRoot();
-        if (!root)
-        {
-            std::cerr << "ERROR: Root GameObject is null!" << std::endl;
-            return false;
-        }
-
-        if (!root->GetChildren().empty())
-        {
-            GameObject* bakerHouse = root->GetChildren().back();
-
-            ComponentTransform* transform = bakerHouse->GetComponent<ComponentTransform>();
-            if (transform)
-            {
-                transform->SetScale(glm::vec3(1.0f));
-
-                glm::quat correction = glm::angleAxis(glm::radians(0.0f), glm::vec3(1, 0, 0));
-                transform->SetRotation(correction);
-
-            }
-            // Cargar textura y aplicarla
-            GLuint bakerTexture = Texture::LoadTexture("../Assets/Textures/Baker_house.png");
-            if (!bakerTexture)
-                bakerTexture = Texture::CreateCheckerboardTexture(512, 512, 32);
-
-            ApplyTextureToGameObjects(bakerHouse, bakerTexture, "../Assets/Textures/Baker_house.png");
-
-            // Seleccionar el GameObject
-            app.moduleScene->SetSelectedGameObject(bakerHouse);
-
-            ModuleEditor::PushEnginePrintf("Initial model loaded, scaled, textured, and selected.");
-        }
-    }
-    catch (const std::exception& e)
-    {
-        ModuleEditor::PushEnginePrintf("ERROR: Could not load initial model");
-    }
-    catch (...)
-    {
-        ModuleEditor::PushEnginePrintf("UNKNOWN ERROR: Could not load initial model");
-    }
-
     isGeometryActive = false;
 
     ModuleEditor::PushEnginePrintf("OpenGL initialization complete");

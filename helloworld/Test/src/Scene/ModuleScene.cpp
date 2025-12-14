@@ -259,19 +259,39 @@ void ModuleScene::LoadFromAssimp(const aiScene* scene, const aiNode* node, GameO
 {
     GameObject* gameObject = CreateGameObject(node->mName.C_Str(), parent);
 
-    ComponentTransform* transform = (ComponentTransform*)gameObject->CreateComponent(ComponentType::TRANSFORM);
+    // El Transform ya existe, solo lo obtenemos
+    ComponentTransform* transform = gameObject->GetComponent<ComponentTransform>();
 
-    aiVector3D translation, scaling;
-    aiQuaternion rotation;
-    node->mTransformation.Decompose(scaling, rotation, translation);
+    if (transform)
+    {
+        // Convertir la matriz de Assimp a GLM
+        aiMatrix4x4 assimpMatrix = node->mTransformation;
 
-    glm::vec3 pos(translation.x, translation.y, translation.z);
-    glm::vec3 scale(scaling.x, scaling.y, scaling.z);
-    glm::quat rot(rotation.w, rotation.x, rotation.y, rotation.z);
+        glm::mat4 localMatrix(
+            assimpMatrix.a1, assimpMatrix.b1, assimpMatrix.c1, assimpMatrix.d1,
+            assimpMatrix.a2, assimpMatrix.b2, assimpMatrix.c2, assimpMatrix.d2,
+            assimpMatrix.a3, assimpMatrix.b3, assimpMatrix.c3, assimpMatrix.d3,
+            assimpMatrix.a4, assimpMatrix.b4, assimpMatrix.c4, assimpMatrix.d4
+        );
 
-    transform->SetPosition(pos);
-    transform->SetScale(scale);
-    transform->SetRotation(rot);
+        // Descomponer usando GLM (mas preciso)
+        glm::vec3 scale;
+        glm::quat rotation;
+        glm::vec3 translation;
+        glm::vec3 skew;
+        glm::vec4 perspective;
+
+        glm::decompose(localMatrix, scale, rotation, translation, skew, perspective);
+
+        // Aplicar transformacion LOCAL (no global)
+        transform->SetPosition(translation);
+        transform->SetRotation(rotation);
+        transform->SetScale(scale);
+
+        std::cout << "[ModuleScene] Node: " << node->mName.C_Str()
+            << " | Pos: (" << translation.x << ", " << translation.y << ", " << translation.z << ")"
+            << " | Scale: (" << scale.x << ", " << scale.y << ", " << scale.z << ")" << std::endl;
+    }
 
     std::cout << "[ModuleScene] Created GameObject: " << node->mName.C_Str()
         << " with transform" << std::endl;
@@ -289,10 +309,14 @@ void ModuleScene::LoadFromAssimp(const aiScene* scene, const aiNode* node, GameO
             std::string meshName = std::string(node->mName.C_Str()) + "_mesh_" + std::to_string(i);
             meshGameObject = CreateGameObject(meshName.c_str(), gameObject);
 
-            ComponentTransform* subTransform = (ComponentTransform*)meshGameObject->CreateComponent(ComponentType::TRANSFORM);
-            subTransform->SetPosition(glm::vec3(0.0f));
-            subTransform->SetScale(glm::vec3(1.0f));
-            subTransform->SetRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+            // Los submeshes mantienen transform identidad (ya estan en el espacio del nodo padre)
+            ComponentTransform* subTransform = meshGameObject->GetComponent<ComponentTransform>();
+            if (subTransform)
+            {
+                subTransform->SetPosition(glm::vec3(0.0f));
+                subTransform->SetScale(glm::vec3(1.0f));
+                subTransform->SetRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+            }
         }
 
         ComponentMesh* compMesh = (ComponentMesh*)meshGameObject->CreateComponent(ComponentType::MESH);
@@ -340,6 +364,7 @@ void ModuleScene::LoadFromAssimp(const aiScene* scene, const aiNode* node, GameO
         }
     }
 
+    // Procesar hijos DESPUES de configurar este nodo
     for (unsigned int i = 0; i < node->mNumChildren; i++)
     {
         LoadFromAssimp(scene, node->mChildren[i], gameObject, basePath);
