@@ -12,6 +12,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include <filesystem>
+#include <map>
 
 #include "GeometryGenerator.h"
 #include "GameObject.h"
@@ -148,6 +149,9 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
 {
     if (!go) return;
 
+    // USAR UUID EN LUGAR DEL PUNTERO PARA EVITAR CONFLICTOS
+    ImGui::PushID(go->GetUUID().GetValue());
+
     ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
 
     if (go == app.moduleScene->GetSelectedGameObject())
@@ -161,7 +165,9 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
         node_flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     }
 
-    bool node_open = ImGui::TreeNodeEx((void*)go, node_flags, "%s", go->GetName());
+    // Usar ## para ocultar el ID del label visible
+    std::string label = std::string(go->GetName()) + "##" + std::to_string(go->GetUUID().GetValue());
+    bool node_open = ImGui::TreeNodeEx(label.c_str(), node_flags);
 
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
     {
@@ -315,6 +321,9 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
             ImGui::TreePop();
         }
     }
+
+    // IMPORTANTE: PopID al final
+    ImGui::PopID();
 }
 
 ModuleEditor::ModuleEditor()
@@ -927,17 +936,31 @@ bool ModuleEditor::Update()
                         if (app.moduleResources)
                         {
                             uint64_t uid = app.moduleResources->Find(assetPath);
+
+                            // Si no existe, importar primero
+                            if (uid == 0)
+                            {
+                                PushEngineLog("Asset not imported yet, importing...");
+                                uid = app.moduleResources->ImportFile(assetPath);
+                            }
+
                             if (uid != 0)
                             {
                                 auto info = app.moduleResources->GetResourceInfo(uid);
-                                WizardEngine::AssetMetaData* metaData =
-                                    app.assetManager->GetMetaData(assetPath);
+                                WizardEngine::AssetMetaData* metaData = app.assetManager->GetMetaData(assetPath);
+
+                                // Cargar el modelo
                                 LoadModelFromWZD(info.libraryPath, metaData);
+
                                 PushEnginePrintf("Model loaded to scene: %s", assetPath.c_str());
+                            }
+                            else
+                            {
+                                PushEngineLog("ERROR: Failed to import asset");
                             }
                         }
                     }
-                    // TODO: Handle texture drops (apply to selected object's material)
+                    // Handle texture drops (apply to selected object's material)
                     else if (ext == "png" || ext == "jpg" || ext == "jpeg" ||
                         ext == "bmp" || ext == "tga")
                     {
@@ -2162,12 +2185,12 @@ void ModuleEditor::OpenLoadSceneDialog()
 
 void ModuleEditor::LoadModelFromWZD(const std::string& wzdPath, WizardEngine::AssetMetaData* metaData)
 {
-    PushEnginePrintf("Loading model from: %s", wzdPath.c_str());
+    ModuleEditor::PushEnginePrintf("Loading model from: %s", wzdPath.c_str());
 
     auto& app = Application::GetInstance();
     if (!app.moduleScene)
     {
-        PushEngineLog("ERROR: ModuleScene not available");
+        ModuleEditor::PushEngineLog("ERROR: ModuleScene not available");
         return;
     }
 
@@ -2175,7 +2198,7 @@ void ModuleEditor::LoadModelFromWZD(const std::string& wzdPath, WizardEngine::As
     WizardEngine::WizardModelData modelData;
     if (!WizardEngine::ModelImporter::Load(wzdPath, modelData))
     {
-        PushEngineLog("ERROR: Failed to load WZD file");
+        ModuleEditor::PushEngineLog("ERROR: Failed to load WZD file");
         return;
     }
 
@@ -2188,7 +2211,7 @@ void ModuleEditor::LoadModelFromWZD(const std::string& wzdPath, WizardEngine::As
 
     if (!modelRoot)
     {
-        PushEngineLog("ERROR: Failed to create GameObject");
+        ModuleEditor::PushEngineLog("ERROR: Failed to create GameObject");
         return;
     }
 
@@ -2196,12 +2219,23 @@ void ModuleEditor::LoadModelFromWZD(const std::string& wzdPath, WizardEngine::As
     ComponentTransform* rootTransform = modelRoot->GetComponent<ComponentTransform>();
     if (rootTransform && metaData)
     {
+        // IMPORTANTE: Aplicar escala y rotación de import settings
         rootTransform->SetScale(metaData->importScale);
         rootTransform->SetRotation(glm::quat(glm::radians(metaData->importRotation)));
-        rootTransform->SetPosition(metaData->importPosition);
+        // Posición se establece en (0,0,0) por defecto
+        rootTransform->SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
 
-        PushEnginePrintf("Applied import settings - Scale: (%.2f, %.2f, %.2f)",
-            metaData->importScale.x, metaData->importScale.y, metaData->importScale.z);
+        ModuleEditor::PushEnginePrintf("Applied import settings - Scale: (%.2f, %.2f, %.2f), Rotation: (%.2f, %.2f, %.2f)",
+            metaData->importScale.x, metaData->importScale.y, metaData->importScale.z,
+            metaData->importRotation.x, metaData->importRotation.y, metaData->importRotation.z);
+    }
+    else if (rootTransform)
+    {
+        // Si no hay metadata, usar valores por defecto razonables
+        rootTransform->SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
+        rootTransform->SetScale(glm::vec3(1.0f, 1.0f, 1.0f));
+        rootTransform->SetRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+        ModuleEditor::PushEngineLog("No metadata found, using default transform");
     }
 
     // Load each mesh
@@ -2212,7 +2246,7 @@ void ModuleEditor::LoadModelFromWZD(const std::string& wzdPath, WizardEngine::As
         WizardEngine::WizardMeshData meshData;
         if (!WizardEngine::MeshImporter::Load(meshRef.meshFilepath, meshData))
         {
-            PushEnginePrintf("WARNING: Failed to load mesh: %s", meshRef.meshFilepath.c_str());
+            ModuleEditor::PushEnginePrintf("WARNING: Failed to load mesh: %s", meshRef.meshFilepath.c_str());
             continue;
         }
 
@@ -2272,9 +2306,10 @@ void ModuleEditor::LoadModelFromWZD(const std::string& wzdPath, WizardEngine::As
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
                     matComp->SetTexture(texID, matData.diffuseTexture.c_str(), texData.channels);
 
-                    PushEnginePrintf("Loaded texture: %s", matData.diffuseTexture.c_str());
+                    ModuleEditor::PushEnginePrintf("Loaded texture: %s", matData.diffuseTexture.c_str());
                 }
                 else
                 {
@@ -2294,18 +2329,21 @@ void ModuleEditor::LoadModelFromWZD(const std::string& wzdPath, WizardEngine::As
 
     app.moduleScene->UpdateAllAABBs();
 
-    PushEnginePrintf("Model loaded successfully: %s (%zu meshes)",
+    // Seleccionar el modelo cargado
+    app.moduleScene->SetSelectedGameObject(modelRoot);
+
+    ModuleEditor::PushEnginePrintf("Model loaded successfully: %s (%zu meshes)",
         modelName.c_str(), modelData.meshes.size());
 }
 
 void ModuleEditor::LoadMeshFromWZM(const std::string& wzmPath)
 {
-    PushEnginePrintf("Loading mesh from: %s", wzmPath.c_str());
+    ModuleEditor::PushEnginePrintf("Loading mesh from: %s", wzmPath.c_str());
 
     auto& app = Application::GetInstance();
     if (!app.moduleScene)
     {
-        PushEngineLog("ERROR: ModuleScene not available");
+        ModuleEditor::PushEngineLog("ERROR: ModuleScene not available");
         return;
     }
 
@@ -2313,7 +2351,7 @@ void ModuleEditor::LoadMeshFromWZM(const std::string& wzmPath)
     WizardEngine::WizardMeshData meshData;
     if (!WizardEngine::MeshImporter::Load(wzmPath, meshData))
     {
-        PushEngineLog("ERROR: Failed to load WZM file");
+        ModuleEditor::PushEngineLog("ERROR: Failed to load WZM file");
         return;
     }
 
@@ -2326,7 +2364,7 @@ void ModuleEditor::LoadMeshFromWZM(const std::string& wzmPath)
 
     if (!meshObj)
     {
-        PushEngineLog("ERROR: Failed to create GameObject");
+        ModuleEditor::PushEngineLog("ERROR: Failed to create GameObject");
         return;
     }
 
@@ -2369,7 +2407,7 @@ void ModuleEditor::LoadMeshFromWZM(const std::string& wzmPath)
     meshObj->UpdateAABB();
     app.moduleScene->UpdateAllAABBs();
 
-    PushEnginePrintf("Mesh loaded successfully: %s", meshName.c_str());
+    ModuleEditor::PushEnginePrintf("Mesh loaded successfully: %s", meshName.c_str());
 }
 
 void ModuleEditor::DrawAssetBrowser()
@@ -2383,7 +2421,7 @@ void ModuleEditor::DrawAssetBrowser()
         if (current.has_parent_path() && current != "Assets/")
         {
             currentAssetPath = current.parent_path().string() + "/";
-            PushEnginePrintf("Navigated to: %s", currentAssetPath.c_str());
+            ModuleEditor::PushEnginePrintf("Navigated to: %s", currentAssetPath.c_str());
         }
     }
     ImGui::SameLine();
@@ -2394,7 +2432,7 @@ void ModuleEditor::DrawAssetBrowser()
         if (app.moduleResources)
         {
             app.moduleResources->ScanAssetsFolder();
-            PushEngineLog("Asset folder refreshed");
+            ModuleEditor::PushEngineLog("Asset folder refreshed");
         }
     }
 
@@ -2440,6 +2478,7 @@ void ModuleEditor::DrawAssetGrid()
     int columnCount = std::max(1, (int)(panelWidth / cellSize));
 
     int currentColumn = 0;
+    int itemIndex = 0; // Contador unico para cada item
 
     for (const auto& entry : std::filesystem::directory_iterator(currentAssetPath))
     {
@@ -2453,6 +2492,9 @@ void ModuleEditor::DrawAssetGrid()
 
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
+        // PUSH ID UNICO PARA CADA ITEM
+        ImGui::PushID(itemIndex++);
+
         if (currentColumn > 0) ImGui::SameLine();
 
         ImGui::BeginGroup();
@@ -2464,6 +2506,8 @@ void ModuleEditor::DrawAssetGrid()
 
         const char* icon = GetIconForFile(ext);
 
+        // Usar solo iconos de texto, SIN cargar texturas aquí
+        // (cargar texturas en tiempo real causa problemas de rendimiento y crashes)
         if (ImGui::Button(icon, ImVec2(iconSize, iconSize)))
         {
             selectedAssetPath = filepath;
@@ -2519,6 +2563,9 @@ void ModuleEditor::DrawAssetGrid()
 
         ImGui::EndGroup();
 
+        // POP ID AL FINAL DE CADA ITEM
+        ImGui::PopID();
+
         currentColumn++;
         if (currentColumn >= columnCount) {
             currentColumn = 0;
@@ -2564,7 +2611,7 @@ void ModuleEditor::DrawFolderTree(const std::filesystem::path& path, const std::
     if (ImGui::IsItemClicked())
     {
         currentAssetPath = path.string() + "/";
-        PushEnginePrintf("Selected folder: %s", currentAssetPath.c_str());
+        ModuleEditor::PushEnginePrintf("Selected folder: %s", currentAssetPath.c_str());
     }
 
     if (node_open && hasSubdirs)
@@ -2591,14 +2638,14 @@ void ModuleEditor::ProcessEvent(const SDL_Event& event)
             std::string ext = GetFileExtension(droppedPath);
             std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
-            PushEnginePrintf("File dropped: %s", droppedPath.c_str());
+            ModuleEditor::PushEnginePrintf("File dropped: %s", droppedPath.c_str());
 
             auto& app = Application::GetInstance();
 
             // NO cargar archivos .wzd, .wzm, .wzt directamente
             if (ext == "wzd" || ext == "wzm" || ext == "wzt") {
-                PushEngineLog("ERROR: Library files should not be imported directly!");
-                PushEngineLog("Please drag the original source file (FBX, PNG, etc.)");
+                ModuleEditor::PushEngineLog("ERROR: Library files should not be imported directly!");
+                ModuleEditor::PushEngineLog("Please drag the original source file (FBX, PNG, etc.)");
                 return;
             }
 
@@ -2608,13 +2655,13 @@ void ModuleEditor::ProcessEvent(const SDL_Event& event)
 
             try {
                 if (std::filesystem::exists(targetPath)) {
-                    PushEnginePrintf("WARNING: File already exists: %s", targetPath.c_str());
+                    ModuleEditor::PushEnginePrintf("WARNING: File already exists: %s", targetPath.c_str());
                 }
 
                 std::filesystem::copy_file(droppedPath, targetPath,
                     std::filesystem::copy_options::overwrite_existing);
 
-                PushEnginePrintf("Copied to: %s", targetPath.c_str());
+                ModuleEditor::PushEnginePrintf("Copied to: %s", targetPath.c_str());
 
                 // Process with ModuleResources
                 if (app.moduleResources)
@@ -2623,7 +2670,7 @@ void ModuleEditor::ProcessEvent(const SDL_Event& event)
 
                     if (uid != 0)
                     {
-                        PushEnginePrintf("Asset imported with UID: %llu", uid);
+                        ModuleEditor::PushEnginePrintf("Asset imported with UID: %llu", uid);
 
                         // Auto-load model if it's a model file
                         if (ext == "fbx" || ext == "obj" || ext == "gltf" ||
@@ -2643,12 +2690,12 @@ void ModuleEditor::ProcessEvent(const SDL_Event& event)
                     }
                     else
                     {
-                        PushEngineLog("ERROR: Failed to import asset");
+                        ModuleEditor::PushEngineLog("ERROR: Failed to import asset");
                     }
                 }
             }
             catch (const std::exception& e) {
-                PushEnginePrintf("ERROR copying file: %s", e.what());
+                ModuleEditor::PushEnginePrintf("ERROR copying file: %s", e.what());
             }
         }
     }
