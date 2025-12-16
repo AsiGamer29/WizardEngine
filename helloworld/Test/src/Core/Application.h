@@ -7,6 +7,7 @@
 #include "Camera.h"
 #include "ModuleScene.h"
 #include "AssetManager.h"
+#include "ModuleResources.h"
 #include <memory>
 #include <vector>
 
@@ -23,6 +24,7 @@ public:
     std::shared_ptr<Camera> camera;
     std::shared_ptr<ModuleScene> moduleScene;
     std::shared_ptr<WizardEngine::AssetManager> assetManager;
+	std::shared_ptr<WizardEngine::ModuleResources> moduleResources;
 
 
 

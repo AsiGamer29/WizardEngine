@@ -1,6 +1,8 @@
 #pragma once
 #include "Module.h"
 #include "MetaFile.h"
+#include "Resource.h"
+#include "ModuleResources.h"
 #include "imgui.h"
 #include <glad/glad.h>
 #include <string>
@@ -43,6 +45,10 @@ private:
     bool show_console_window = true;
     bool show_hierarchy_window = true;
     bool show_inspector_window = true;
+    bool show_asset_browser = true;
+    bool show_config_resources = false;
+
+
     bool firstTimeLayout = true;
 
     // NUEVO: Variables para guardar/cargar escenas
@@ -115,4 +121,14 @@ private:
     static std::mutex engine_log_mutex;
     static size_t engine_log_max_messages;
     static bool engine_log_auto_scroll;
+
+    // Asset Browser
+    std::string currentAssetPath = "../Assets/";
+    std::string selectedAssetPath;
+
+    void DrawAssetBrowser();
+    void DrawFolderTree(const std::filesystem::path& path, const std::filesystem::path& currentPath);
+    void DrawAssetGrid();
+    const char* GetIconForFile(const std::string& extension);
+    ImVec4 GetColorForFileType(const std::string& extension);
 };

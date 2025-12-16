@@ -21,6 +21,7 @@ Application::Application() : isRunning(true)
         -90.0f, 0.0f
     );
     assetManager = std::make_shared<WizardEngine::AssetManager>();
+	moduleResources = std::make_shared<WizardEngine::ModuleResources>();
 
     // ORDEN DE INICIALIZACIÓN (importante):
     // 1. ModuleScene (crea el root)
@@ -244,5 +245,6 @@ bool Application::CleanUp()
             break;
         }
     }
+
     return result;
 }

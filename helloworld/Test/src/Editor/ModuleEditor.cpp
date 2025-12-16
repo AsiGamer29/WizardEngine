@@ -23,6 +23,8 @@
 #include "MeshImporter.h"
 #include "TextureImporter.h"
 #include "MetaFile.h"
+#include "Resource.h"
+#include "ModuleResources.h"
 
 
 #define GLM_ENABLE_EXPERIMENTAL
@@ -607,12 +609,14 @@ bool ModuleEditor::Update()
             bool prev_hier = show_hierarchy_window;
             bool prev_inspector = show_inspector_window;
             bool prev_viewport = show_viewport_window;
+            bool prev_asset_browser = show_asset_browser;
 
             ImGui::MenuItem("About", NULL, &show_about_window);
             ImGui::MenuItem("Console", NULL, &show_console_window);
             ImGui::MenuItem("Hierarchy", NULL, &show_hierarchy_window);
             ImGui::MenuItem("Inspector", NULL, &show_inspector_window);
             ImGui::MenuItem("Viewport", NULL, &show_viewport_window);
+            ImGui::MenuItem("Asset Browser", NULL, &show_asset_browser);
 
             if (prev_about != show_about_window)
                 PushEnginePrintf("About Window %s", show_about_window ? "opened" : "closed");
@@ -622,6 +626,8 @@ bool ModuleEditor::Update()
                 PushEnginePrintf("Hierarchy Window %s", show_hierarchy_window ? "opened" : "closed");
             if (prev_inspector != show_inspector_window)
                 PushEnginePrintf("Inspector Window %s", show_inspector_window ? "opened" : "closed");
+            if (prev_asset_browser != show_asset_browser)
+                PushEnginePrintf("Asset Browser %s", show_asset_browser ? "opened" : "closed");
 
             ImGui::Separator();
 
@@ -671,6 +677,7 @@ bool ModuleEditor::Update()
                 ImGui::MenuItem("Performance", NULL, &show_config_performance);
                 ImGui::MenuItem("Modules", NULL, &show_config_modules);
                 ImGui::MenuItem("System", NULL, &show_config_system);
+                ImGui::MenuItem("Resources", NULL, &show_config_resources);
                 ImGui::EndMenu();
             }
 
@@ -901,6 +908,65 @@ bool ModuleEditor::Update()
                 app.input->SetViewportHovered(imageHovered);
             }
 
+            // DROP TARGET for assets from Asset Browser
+            if (ImGui::BeginDragDropTarget())
+            {
+                if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_PATH"))
+                {
+                    const char* droppedPath = (const char*)payload->Data;
+                    std::string assetPath(droppedPath);
+                    std::string ext = GetFileExtension(assetPath);
+                    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+                    PushEnginePrintf("Asset dropped to viewport: %s", assetPath.c_str());
+
+                    // Load model if it's a model file
+                    if (ext == "fbx" || ext == "obj" || ext == "gltf" ||
+                        ext == "glb" || ext == "dae")
+                    {
+                        if (app.moduleResources)
+                        {
+                            uint64_t uid = app.moduleResources->Find(assetPath);
+                            if (uid != 0)
+                            {
+                                auto info = app.moduleResources->GetResourceInfo(uid);
+                                WizardEngine::AssetMetaData* metaData =
+                                    app.assetManager->GetMetaData(assetPath);
+                                LoadModelFromWZD(info.libraryPath, metaData);
+                                PushEnginePrintf("Model loaded to scene: %s", assetPath.c_str());
+                            }
+                        }
+                    }
+                    // TODO: Handle texture drops (apply to selected object's material)
+                    else if (ext == "png" || ext == "jpg" || ext == "jpeg" ||
+                        ext == "bmp" || ext == "tga")
+                    {
+                        if (app.moduleScene)
+                        {
+                            GameObject* selected = app.moduleScene->GetSelectedGameObject();
+                            if (selected)
+                            {
+                                ComponentMaterial* mat = selected->GetComponent<ComponentMaterial>();
+                                if (mat)
+                                {
+                                    mat->LoadTexture(assetPath.c_str());
+                                    PushEnginePrintf("Texture applied to: %s", selected->GetName());
+                                }
+                                else
+                                {
+                                    PushEngineLog("Selected object has no material component");
+                                }
+                            }
+                            else
+                            {
+                                PushEngineLog("No object selected to apply texture");
+                            }
+                        }
+                    }
+                }
+                ImGui::EndDragDropTarget();
+            }
+
             HandleGizmo();
 
             if (imageClicked && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver())
@@ -1009,6 +1075,27 @@ bool ModuleEditor::Update()
             {
                 ImGui::Text("ModuleScene not available");
             }
+        }
+        ImGui::End();
+    }
+
+	// Asset Browser window
+    if (show_asset_browser)
+    {
+        ImVec2 mainSize = ImGui::GetMainViewport()->Size;
+        ImVec2 mainPos = ImGui::GetMainViewport()->Pos;
+
+        float leftWidth = mainSize.x * 0.2f;
+        float centerWidth = mainSize.x * 0.6f;
+        float topHeight = mainSize.y * 0.7f;
+        float bottomHeight = mainSize.y * 0.3f;
+
+        ImGui::SetNextWindowPos(ImVec2(mainPos.x + leftWidth, mainPos.y + topHeight + 20), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(centerWidth + (mainSize.x * 0.2f), bottomHeight - 20), ImGuiCond_FirstUseEver);
+
+        if (ImGui::Begin("Asset Browser", &show_asset_browser))
+        {
+            DrawAssetBrowser();
         }
         ImGui::End();
     }
@@ -1421,6 +1508,181 @@ bool ModuleEditor::Update()
         ImGui::End();
     }
 
+    // Config: Resources
+    if (show_config_resources)
+    {
+        ImGui::Begin("Resources Configuration", &show_config_resources);
+
+        auto& app = Application::GetInstance();
+
+        if (!app.moduleResources)
+        {
+            ImGui::TextDisabled("ModuleResources not available");
+            ImGui::End();
+            return false;
+        }
+
+        ImGui::Text("Resource Management System");
+        ImGui::Separator();
+
+        auto allResources = app.moduleResources->GetAllResourcesInfo();
+
+        // Statistics
+        int totalResources = allResources.size();
+        int inMemory = 0;
+        int withReferences = 0;
+
+        std::map<WizardEngine::ResourceType, int> typeCount;
+
+        for (const auto& info : allResources)
+        {
+            if (info.inMemory) inMemory++;
+            if (info.references > 0) withReferences++;
+            typeCount[info.type]++;
+        }
+
+        ImGui::Text("Total Resources: %d", totalResources);
+        ImGui::Text("In Memory: %d", inMemory);
+        ImGui::Text("With References: %d", withReferences);
+
+        ImGui::Separator();
+        ImGui::Text("By Type:");
+
+        if (typeCount[WizardEngine::ResourceType::TEXTURE] > 0)
+            ImGui::BulletText("Textures: %d", typeCount[WizardEngine::ResourceType::TEXTURE]);
+        if (typeCount[WizardEngine::ResourceType::MESH] > 0)
+            ImGui::BulletText("Meshes: %d", typeCount[WizardEngine::ResourceType::MESH]);
+        if (typeCount[WizardEngine::ResourceType::MODEL] > 0)
+            ImGui::BulletText("Models: %d", typeCount[WizardEngine::ResourceType::MODEL]);
+        if (typeCount[WizardEngine::ResourceType::SCENE] > 0)
+            ImGui::BulletText("Scenes: %d", typeCount[WizardEngine::ResourceType::SCENE]);
+
+        ImGui::Separator();
+
+        // Resource list with details
+        ImGui::Text("Resource List:");
+
+        if (ImGui::BeginChild("ResourceListRegion", ImVec2(0, 400), true))
+        {
+            for (const auto& info : allResources)
+            {
+                ImGui::PushID(info.uid);
+
+                // Color code by type
+                ImVec4 color;
+                const char* typeStr;
+                switch (info.type)
+                {
+                case WizardEngine::ResourceType::TEXTURE:
+                    color = ImVec4(0.8f, 0.3f, 0.8f, 1.0f);
+                    typeStr = "[TEX]";
+                    break;
+                case WizardEngine::ResourceType::MESH:
+                    color = ImVec4(0.3f, 0.8f, 0.8f, 1.0f);
+                    typeStr = "[MESH]";
+                    break;
+                case WizardEngine::ResourceType::MODEL:
+                    color = ImVec4(0.3f, 0.8f, 0.3f, 1.0f);
+                    typeStr = "[MODEL]";
+                    break;
+                case WizardEngine::ResourceType::SCENE:
+                    color = ImVec4(0.9f, 0.6f, 0.3f, 1.0f);
+                    typeStr = "[SCENE]";
+                    break;
+                default:
+                    color = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+                    typeStr = "[???]";
+                    break;
+                }
+
+                ImGui::PushStyleColor(ImGuiCol_Text, color);
+
+                bool node_open = ImGui::TreeNodeEx(info.name.c_str(),
+                    ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed);
+
+                ImGui::PopStyleColor();
+
+                if (node_open)
+                {
+                    ImGui::Text("Type: %s", typeStr);
+                    ImGui::Text("UID: %llu", info.uid);
+                    ImGui::Text("Asset Path: %s", info.assetPath.c_str());
+                    ImGui::Text("Library Path: %s", info.libraryPath.c_str());
+
+                    ImGui::Spacing();
+
+                    if (info.inMemory)
+                    {
+                        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "IN MEMORY");
+                    }
+                    else
+                    {
+                        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Not loaded");
+                    }
+
+                    ImGui::Text("References: %u", info.references);
+
+                    ImGui::Spacing();
+
+                    // Actions
+                    if (ImGui::Button("Load to Memory") && !info.inMemory)
+                    {
+                        WizardEngine::Resource* res = app.moduleResources->RequestResource(info.uid);
+                        if (res)
+                        {
+                            PushEnginePrintf("Loaded resource: %s", info.name.c_str());
+                        }
+                    }
+
+                    ImGui::SameLine();
+
+                    if (ImGui::Button("Release") && info.references > 0)
+                    {
+                        app.moduleResources->ReleaseResource(info.uid);
+                        PushEnginePrintf("Released resource: %s", info.name.c_str());
+                    }
+
+                    ImGui::TreePop();
+                }
+
+                ImGui::PopID();
+            }
+        }
+        ImGui::EndChild();
+
+        ImGui::Separator();
+
+        if (ImGui::Button("Refresh"))
+        {
+            app.moduleResources->ScanAssetsFolder();
+            PushEngineLog("Resources refreshed");
+        }
+
+        ImGui::SameLine();
+
+        if (ImGui::Button("Unload All Unused"))
+        {
+            // Unload resources with 0 references
+            int unloadedCount = 0;
+            for (const auto& info : allResources)
+            {
+                if (info.inMemory && info.references == 0)
+                {
+                    WizardEngine::Resource* res =
+                        const_cast<WizardEngine::Resource*>(app.moduleResources->RequestResource(info.uid));
+                    if (res)
+                    {
+                        res->UnloadFromMemory();
+                        unloadedCount++;
+                    }
+                }
+            }
+            PushEnginePrintf("Unloaded %d unused resources", unloadedCount);
+        }
+
+        ImGui::End();
+    }
+
     // About window
     if (show_about_window)
     {
@@ -1489,98 +1751,6 @@ bool ModuleEditor::CleanUp()
     ImGui::DestroyContext();
 
     return true;
-}
-
-void ModuleEditor::ProcessEvent(const SDL_Event& event)
-{
-    if (event.type == SDL_EVENT_DROP_FILE)
-    {
-        const char* data = event.drop.data;
-        if (data)
-        {
-            std::string droppedPath(data);
-            std::string ext = GetFileExtension(droppedPath);
-            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-
-            PushEnginePrintf("File dropped: %s", droppedPath.c_str());
-
-            auto& app = Application::GetInstance();
-
-            // NO cargar directamente archivos .wzd, .wzm, .wzt
-            // Estos son archivos de Library, no deben ser arrastrados
-            if (ext == "wzd" || ext == "wzm" || ext == "wzt") {
-                PushEngineLog("ERROR: Library files should not be imported directly!");
-                PushEngineLog("Please drag the original source file (FBX, PNG, etc.)");
-                return;
-            }
-
-            // Copiar a Assets/
-            std::filesystem::path sourcePath(droppedPath);
-            std::string targetPath = "Assets/" + sourcePath.filename().string();
-
-            try {
-                // Check if already exists
-                if (std::filesystem::exists(targetPath)) {
-                    PushEnginePrintf("WARNING: File already exists in Assets: %s", targetPath.c_str());
-
-                    // Check if needs reimport
-                    if (app.assetManager && app.assetManager->NeedsReimport(targetPath)) {
-                        PushEngineLog("File has been modified, reimporting...");
-                    }
-                    else {
-                        PushEngineLog("File is up-to-date, loading from cache...");
-
-                        // Load directly from library
-                        std::string libraryPath = app.assetManager->GetLibraryPath(targetPath);
-                        if (!libraryPath.empty()) {
-                            if (ext == "fbx" || ext == "obj" || ext == "gltf" ||
-                                ext == "glb" || ext == "dae") {
-                                LoadModelFromWZD(libraryPath);
-                            }
-                        }
-                        return;
-                    }
-                }
-
-                std::filesystem::copy_file(droppedPath, targetPath,
-                    std::filesystem::copy_options::overwrite_existing);
-
-                PushEnginePrintf("Copied to: %s", targetPath.c_str());
-
-                // Process with AssetManager
-                if (app.assetManager)
-                {
-                    if (app.assetManager->ProcessAssetFile(targetPath))
-                    {
-                        PushEngineLog("Asset imported successfully!");
-                        app.assetManager->PrintStatistics();
-
-                        // Load model automatically
-                        if (ext == "fbx" || ext == "obj" || ext == "gltf" ||
-                            ext == "glb" || ext == "dae")
-                        {
-                            std::string libraryPath = app.assetManager->GetLibraryPath(targetPath);
-                            if (!libraryPath.empty())
-                            {
-                                // Get meta data for import settings
-                                WizardEngine::AssetMetaData* metaData = app.assetManager->GetMetaData(targetPath);
-                                LoadModelFromWZD(libraryPath, metaData);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        PushEngineLog("ERROR: Failed to import asset");
-                    }
-                }
-            }
-            catch (const std::exception& e) {
-                PushEnginePrintf("ERROR copying file: %s", e.what());
-            }
-        }
-    }
-
-    ImGui_ImplSDL3_ProcessEvent(&event);
 }
 
 // Helper para obtener extensión
@@ -2200,4 +2370,234 @@ void ModuleEditor::LoadMeshFromWZM(const std::string& wzmPath)
     app.moduleScene->UpdateAllAABBs();
 
     PushEnginePrintf("Mesh loaded successfully: %s", meshName.c_str());
+}
+
+void ModuleEditor::DrawAssetBrowser()
+{
+    auto& app = Application::GetInstance();
+
+    // Top toolbar
+    if (ImGui::Button("<"))
+    {
+        std::filesystem::path current(currentAssetPath);
+        if (current.has_parent_path() && current != "Assets/")
+        {
+            currentAssetPath = current.parent_path().string() + "/";
+            PushEnginePrintf("Navigated to: %s", currentAssetPath.c_str());
+        }
+    }
+    ImGui::SameLine();
+    ImGui::Text("%s", currentAssetPath.c_str());
+    ImGui::SameLine();
+    if (ImGui::Button("Refresh"))
+    {
+        if (app.moduleResources)
+        {
+            app.moduleResources->ScanAssetsFolder();
+            PushEngineLog("Asset folder refreshed");
+        }
+    }
+
+    ImGui::Separator();
+
+    // Split view: Folder tree on left, assets on right
+    ImGui::BeginChild("FolderTree", ImVec2(200, 0), true);
+    {
+        ImGui::Text("Folders");
+        ImGui::Separator();
+
+        std::filesystem::path assetsPath("Assets/");
+        DrawFolderTree(assetsPath, std::filesystem::path(currentAssetPath));
+    }
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    ImGui::BeginChild("AssetGrid", ImVec2(0, 0), true);
+    {
+        DrawAssetGrid();
+    }
+    ImGui::EndChild();
+}
+
+void ModuleEditor::DrawFolderTree(const std::filesystem::path& path, const std::filesystem::path& currentPath)
+{
+    if (!std::filesystem::exists(path) || !std::filesystem::is_directory(path))
+        return;
+
+    ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
+
+    if (path == currentPath)
+    {
+        node_flags |= ImGuiTreeNodeFlags_Selected;
+    }
+
+    bool hasSubdirs = false;
+    for (const auto& entry : std::filesystem::directory_iterator(path))
+    {
+        if (entry.is_directory())
+        {
+            hasSubdirs = true;
+            break;
+        }
+    }
+
+    if (!hasSubdirs)
+    {
+        node_flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+    }
+
+    std::string folderName = path.filename().string();
+    if (folderName.empty())
+        folderName = path.string();
+
+    bool node_open = ImGui::TreeNodeEx(folderName.c_str(), node_flags);
+
+    if (ImGui::IsItemClicked())
+    {
+        currentAssetPath = path.string() + "/";
+        PushEnginePrintf("Selected folder: %s", currentAssetPath.c_str());
+    }
+
+    if (node_open && hasSubdirs)
+    {
+        for (const auto& entry : std::filesystem::directory_iterator(path))
+        {
+            if (entry.is_directory())
+            {
+                DrawFolderTree(entry.path(), currentPath);
+            }
+        }
+        ImGui::TreePop();
+    }
+}
+
+void ModuleEditor::ProcessEvent(const SDL_Event& event)
+{
+    if (event.type == SDL_EVENT_DROP_FILE)
+    {
+        const char* data = event.drop.data;
+        if (data)
+        {
+            std::string droppedPath(data);
+            std::string ext = GetFileExtension(droppedPath);
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+            PushEnginePrintf("File dropped: %s", droppedPath.c_str());
+
+            auto& app = Application::GetInstance();
+
+            // NO cargar directamente archivos .wzd, .wzm, .wzt
+            if (ext == "wzd" || ext == "wzm" || ext == "wzt") {
+                PushEngineLog("ERROR: Library files should not be imported directly!");
+                PushEngineLog("Please drag the original source file (FBX, PNG, etc.)");
+                return;
+            }
+
+            // Copiar a Assets/
+            std::filesystem::path sourcePath(droppedPath);
+            std::string targetPath = "Assets/" + sourcePath.filename().string();
+
+            try {
+                // Check if already exists
+                if (std::filesystem::exists(targetPath)) {
+                    PushEnginePrintf("WARNING: File already exists in Assets: %s", targetPath.c_str());
+                }
+
+                std::filesystem::copy_file(droppedPath, targetPath,
+                    std::filesystem::copy_options::overwrite_existing);
+
+                PushEnginePrintf("Copied to: %s", targetPath.c_str());
+
+                // Process with ModuleResources (which uses AssetManager internally)
+                if (app.moduleResources)
+                {
+                    uint64_t uid = app.moduleResources->ImportFile(targetPath);
+
+                    if (uid != 0)
+                    {
+                        PushEnginePrintf("Asset imported with UID: %llu", uid);
+
+                        // Auto-load model if it's a model file
+                        if (ext == "fbx" || ext == "obj" || ext == "gltf" ||
+                            ext == "glb" || ext == "dae")
+                        {
+                            auto info = app.moduleResources->GetResourceInfo(uid);
+                            if (!info.libraryPath.empty())
+                            {
+                                WizardEngine::AssetMetaData* metaData =
+                                    app.assetManager->GetMetaData(targetPath);
+                                LoadModelFromWZD(info.libraryPath, metaData);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        PushEngineLog("ERROR: Failed to import asset");
+                    }
+                }
+            }
+            catch (const std::exception& e) {
+                PushEnginePrintf("ERROR copying file: %s", e.what());
+            }
+        }
+    }
+
+    ImGui_ImplSDL3_ProcessEvent(&event);
+}
+
+const char* ModuleEditor::GetIconForFile(const std::string& extension)
+{
+    if (extension == ".png" || extension == ".jpg" || extension == ".jpeg" ||
+        extension == ".bmp" || extension == ".tga" || extension == ".dds")
+    {
+        return "[IMG]";
+    }
+    else if (extension == ".fbx" || extension == ".obj" || extension == ".gltf" ||
+        extension == ".glb" || extension == ".dae")
+    {
+        return "[3D]";
+    }
+    else if (extension == ".wzm")
+    {
+        return "[MESH]";
+    }
+    else if (extension == ".wzt")
+    {
+        return "[TEX]";
+    }
+    else if (extension == ".wzd")
+    {
+        return "[MODEL]";
+    }
+    else if (extension == ".json")
+    {
+        return "[SCENE]";
+    }
+
+    return "[FILE]";
+}
+
+ImVec4 ModuleEditor::GetColorForFileType(const std::string& extension)
+{
+    if (extension == ".png" || extension == ".jpg" || extension == ".jpeg" ||
+        extension == ".bmp" || extension == ".tga" || extension == ".dds")
+    {
+        return ImVec4(0.8f, 0.3f, 0.8f, 1.0f); // Purple for images
+    }
+    else if (extension == ".fbx" || extension == ".obj" || extension == ".gltf" ||
+        extension == ".glb" || extension == ".dae")
+    {
+        return ImVec4(0.3f, 0.8f, 0.3f, 1.0f); // Green for models
+    }
+    else if (extension == ".wzm" || extension == ".wzt" || extension == ".wzd")
+    {
+        return ImVec4(0.3f, 0.6f, 0.9f, 1.0f); // Blue for library files
+    }
+    else if (extension == ".json")
+    {
+        return ImVec4(0.9f, 0.6f, 0.3f, 1.0f); // Orange for scenes
+    }
+
+    return ImVec4(0.7f, 0.7f, 0.7f, 1.0f); // Gray for unknown
 }
