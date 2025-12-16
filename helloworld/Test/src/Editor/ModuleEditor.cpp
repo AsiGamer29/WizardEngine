@@ -2420,6 +2420,114 @@ void ModuleEditor::DrawAssetBrowser()
     ImGui::EndChild();
 }
 
+void ModuleEditor::DrawAssetGrid()
+{
+    if (!std::filesystem::exists(currentAssetPath))
+    {
+        ImGui::TextDisabled("Directory does not exist: %s", currentAssetPath.c_str());
+        return;
+    }
+
+    auto& app = Application::GetInstance();
+
+    ImGui::BeginChild("AssetGridContent");
+
+    float iconSize = 80.0f;
+    float padding = 10.0f;
+    float cellSize = iconSize + padding;
+
+    float panelWidth = ImGui::GetContentRegionAvail().x;
+    int columnCount = std::max(1, (int)(panelWidth / cellSize));
+
+    int currentColumn = 0;
+
+    for (const auto& entry : std::filesystem::directory_iterator(currentAssetPath))
+    {
+        if (!entry.is_regular_file()) continue;
+
+        std::string filepath = entry.path().string();
+        std::string filename = entry.path().filename().string();
+        std::string ext = entry.path().extension().string();
+
+        if (ext == ".meta") continue;
+
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+        if (currentColumn > 0) ImGui::SameLine();
+
+        ImGui::BeginGroup();
+
+        ImVec4 color = GetColorForFileType(ext);
+        ImGui::PushStyleColor(ImGuiCol_Button, color);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+            ImVec4(color.x * 1.2f, color.y * 1.2f, color.z * 1.2f, color.w));
+
+        const char* icon = GetIconForFile(ext);
+
+        if (ImGui::Button(icon, ImVec2(iconSize, iconSize)))
+        {
+            selectedAssetPath = filepath;
+            PushEnginePrintf("Selected asset: %s", filename.c_str());
+        }
+
+        ImGui::PopStyleColor(2);
+
+        // Drag source
+        if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
+        {
+            ImGui::SetDragDropPayload("ASSET_PATH", filepath.c_str(), filepath.size() + 1);
+            ImGui::Text("Drag: %s", filename.c_str());
+            ImGui::EndDragDropSource();
+        }
+
+        // Double click to open/load
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+        {
+            if (ext == ".fbx" || ext == ".obj" || ext == ".gltf" ||
+                ext == ".glb" || ext == ".dae")
+            {
+                if (app.moduleResources)
+                {
+                    uint64_t uid = app.moduleResources->Find(filepath);
+
+                    if (uid == 0) {
+                        uid = app.moduleResources->ImportFile(filepath);
+                    }
+
+                    if (uid != 0)
+                    {
+                        auto info = app.moduleResources->GetResourceInfo(uid);
+                        WizardEngine::AssetManager* assetMgr = app.GetAssetManager();
+                        if (assetMgr) {
+                            WizardEngine::AssetMetaData* metaData =
+                                assetMgr->GetMetaData(filepath);
+                            LoadModelFromWZD(info.libraryPath, metaData);
+                        }
+                    }
+                }
+            }
+            else if (std::filesystem::is_directory(entry))
+            {
+                currentAssetPath = filepath + "/";
+                PushEnginePrintf("Navigated to: %s", currentAssetPath.c_str());
+            }
+        }
+
+        ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + iconSize);
+        ImGui::TextWrapped("%s", filename.c_str());
+        ImGui::PopTextWrapPos();
+
+        ImGui::EndGroup();
+
+        currentColumn++;
+        if (currentColumn >= columnCount) {
+            currentColumn = 0;
+        }
+    }
+
+    ImGui::EndChild();
+}
+
 void ModuleEditor::DrawFolderTree(const std::filesystem::path& path, const std::filesystem::path& currentPath)
 {
     if (!std::filesystem::exists(path) || !std::filesystem::is_directory(path))
@@ -2487,21 +2595,20 @@ void ModuleEditor::ProcessEvent(const SDL_Event& event)
 
             auto& app = Application::GetInstance();
 
-            // NO cargar directamente archivos .wzd, .wzm, .wzt
+            // NO cargar archivos .wzd, .wzm, .wzt directamente
             if (ext == "wzd" || ext == "wzm" || ext == "wzt") {
                 PushEngineLog("ERROR: Library files should not be imported directly!");
                 PushEngineLog("Please drag the original source file (FBX, PNG, etc.)");
                 return;
             }
 
-            // Copiar a Assets/
+            // Copy to Assets/
             std::filesystem::path sourcePath(droppedPath);
             std::string targetPath = "Assets/" + sourcePath.filename().string();
 
             try {
-                // Check if already exists
                 if (std::filesystem::exists(targetPath)) {
-                    PushEnginePrintf("WARNING: File already exists in Assets: %s", targetPath.c_str());
+                    PushEnginePrintf("WARNING: File already exists: %s", targetPath.c_str());
                 }
 
                 std::filesystem::copy_file(droppedPath, targetPath,
@@ -2509,7 +2616,7 @@ void ModuleEditor::ProcessEvent(const SDL_Event& event)
 
                 PushEnginePrintf("Copied to: %s", targetPath.c_str());
 
-                // Process with ModuleResources (which uses AssetManager internally)
+                // Process with ModuleResources
                 if (app.moduleResources)
                 {
                     uint64_t uid = app.moduleResources->ImportFile(targetPath);
@@ -2525,9 +2632,12 @@ void ModuleEditor::ProcessEvent(const SDL_Event& event)
                             auto info = app.moduleResources->GetResourceInfo(uid);
                             if (!info.libraryPath.empty())
                             {
-                                WizardEngine::AssetMetaData* metaData =
-                                    app.assetManager->GetMetaData(targetPath);
-                                LoadModelFromWZD(info.libraryPath, metaData);
+                                WizardEngine::AssetManager* assetMgr = app.GetAssetManager();
+                                if (assetMgr) {
+                                    WizardEngine::AssetMetaData* metaData =
+                                        assetMgr->GetMetaData(targetPath);
+                                    LoadModelFromWZD(info.libraryPath, metaData);
+                                }
                             }
                         }
                     }

@@ -38,7 +38,7 @@ public:
 
     std::shared_ptr<Camera> GetCamera() const { return camera; }
     std::shared_ptr<ModuleScene> GetModuleScene() const { return moduleScene; }
-
+    WizardEngine::AssetManager* GetAssetManager();  
 private:
     Application();
     ~Application() = default;

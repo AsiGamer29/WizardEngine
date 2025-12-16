@@ -1,13 +1,15 @@
 #include "ModuleResources.h"
 #include "AssetManager.h"
-#include "Application.h"
+#include "MetaFile.h"
 #include <iostream>
 #include <algorithm>
 #include <random>
+#include <filesystem>
 
 namespace WizardEngine {
 
-    ModuleResources::ModuleResources() : timeSinceLastCheck(0.0f) {
+    ModuleResources::ModuleResources()
+        : timeSinceLastCheck(0.0f), assetManager(nullptr) {
         name = "ModuleResources";
     }
 
@@ -17,14 +19,24 @@ namespace WizardEngine {
     bool ModuleResources::Start() {
         std::cout << "[ModuleResources] Initializing..." << std::endl;
 
-        // Create necessary directories
+        // Create directories
         std::filesystem::create_directories("Assets/");
         std::filesystem::create_directories("Library/");
 
-        // Initial scan
+        // Initialize AssetManager
+        assetManager = new AssetManager();
+        if (!assetManager->Initialize()) {
+            std::cerr << "[ModuleResources] Failed to initialize AssetManager" << std::endl;
+            delete assetManager;
+            assetManager = nullptr;
+            return false;
+        }
+
+        // Initial scan - this will import all assets in Assets/ folder
         ScanAssetsFolder();
 
-        std::cout << "[ModuleResources] Initialized with " << resources.size() << " resources" << std::endl;
+        std::cout << "[ModuleResources] Initialized with " << resources.size()
+            << " resources" << std::endl;
         return true;
     }
 
@@ -49,6 +61,12 @@ namespace WizardEngine {
         resources.clear();
         pathToUID.clear();
 
+        // Delete AssetManager
+        if (assetManager) {
+            delete assetManager;
+            assetManager = nullptr;
+        }
+
         return true;
     }
 
@@ -66,39 +84,62 @@ namespace WizardEngine {
         // Check if already exists
         uint64_t existingUID = Find(newFileInAssets);
         if (existingUID != 0) {
-            std::cout << "[ModuleResources] File already imported with UID: " << existingUID << std::endl;
+            std::cout << "[ModuleResources] File already imported with UID: "
+                << existingUID << std::endl;
             return existingUID;
         }
 
-        // Process with AssetManager
-        auto& app = Application::GetInstance();
-        if (!app.assetManager) {
+        if (!assetManager) {
             std::cerr << "[ModuleResources] AssetManager not available" << std::endl;
             return 0;
         }
 
-        if (!app.assetManager->ProcessAssetFile(newFileInAssets)) {
+        // Process with AssetManager (this creates .meta and Library files)
+        if (!assetManager->ProcessAssetFile(newFileInAssets)) {
             std::cerr << "[ModuleResources] Failed to process asset" << std::endl;
             return 0;
         }
 
         // Get meta data
-        AssetMetaData* metaData = app.assetManager->GetMetaData(newFileInAssets);
+        AssetMetaData* metaData = assetManager->GetMetaData(newFileInAssets);
         if (!metaData) {
             std::cerr << "[ModuleResources] Failed to get meta data" << std::endl;
             return 0;
         }
 
-        // Create resource
+        // Convert UUID string to uint64_t
+        uint64_t uid = 0;
+        try {
+            uid = std::stoull(metaData->uuid, nullptr, 16);
+        }
+        catch (const std::exception& e) {
+            std::cerr << "[ModuleResources] Failed to convert UUID: " << e.what() << std::endl;
+            return 0;
+        }
+
+        // Determine resource type
         std::string ext = std::filesystem::path(newFileInAssets).extension().string();
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-
         ResourceType type = GetResourceTypeFromExtension(ext);
 
-        // Generate UID from meta UUID
-        uint64_t uid = std::stoull(metaData->uuid, nullptr, 16);
+        // Create Resource entry
+        Resource* resource = nullptr;
 
-        Resource* resource = CreateNewResource(newFileInAssets, type);
+        switch (type) {
+        case ResourceType::TEXTURE:
+            resource = new ResourceTexture(uid);
+            break;
+        case ResourceType::MESH:
+            resource = new ResourceMesh(uid);
+            break;
+        case ResourceType::MODEL:
+            resource = new ResourceModel(uid);
+            break;
+        default:
+            std::cerr << "[ModuleResources] Unsupported resource type" << std::endl;
+            return 0;
+        }
+
         if (!resource) {
             std::cerr << "[ModuleResources] Failed to create resource" << std::endl;
             return 0;
@@ -130,6 +171,7 @@ namespace WizardEngine {
     Resource* ModuleResources::RequestResource(uint64_t uid) {
         auto it = resources.find(uid);
         if (it == resources.end()) {
+            std::cerr << "[ModuleResources] Resource not found: " << uid << std::endl;
             return nullptr;
         }
 
@@ -138,7 +180,8 @@ namespace WizardEngine {
         // Load to memory if not loaded
         if (!resource->IsLoadedToMemory()) {
             if (!resource->LoadToMemory()) {
-                std::cerr << "[ModuleResources] Failed to load resource to memory: " << uid << std::endl;
+                std::cerr << "[ModuleResources] Failed to load resource to memory: "
+                    << uid << std::endl;
                 return nullptr;
             }
         }
@@ -173,7 +216,8 @@ namespace WizardEngine {
         // Unload from memory if no references
         if (resource->GetReferenceCount() == 0 && resource->IsLoadedToMemory()) {
             resource->UnloadFromMemory();
-            std::cout << "[ModuleResources] Resource " << uid << " unloaded from memory" << std::endl;
+            std::cout << "[ModuleResources] Resource " << uid
+                << " unloaded from memory" << std::endl;
         }
     }
 
@@ -188,8 +232,6 @@ namespace WizardEngine {
             info.type = pair.second->GetType();
             info.inMemory = pair.second->IsLoadedToMemory();
             info.references = pair.second->GetReferenceCount();
-
-            // Extract name from path
             info.name = std::filesystem::path(info.assetPath).filename().string();
 
             infos.push_back(info);
@@ -234,20 +276,20 @@ namespace WizardEngine {
             }
         }
 
-        std::cout << "[ModuleResources] Scan complete: " << count << " files processed" << std::endl;
+        std::cout << "[ModuleResources] Scan complete: " << count
+            << " files processed" << std::endl;
     }
 
     void ModuleResources::CheckForChanges() {
-        // Check if any asset files have been modified
-        auto& app = Application::GetInstance();
-        if (!app.assetManager) return;
+        if (!assetManager) return;
 
         for (const auto& pair : resources) {
             Resource* resource = pair.second;
             std::string assetPath = resource->GetAssetFile();
 
-            if (app.assetManager->NeedsReimport(assetPath)) {
-                std::cout << "[ModuleResources] File changed, reimporting: " << assetPath << std::endl;
+            if (assetManager->NeedsReimport(assetPath)) {
+                std::cout << "[ModuleResources] File changed, reimporting: "
+                    << assetPath << std::endl;
 
                 // Unload from memory first
                 if (resource->IsLoadedToMemory()) {
@@ -255,10 +297,10 @@ namespace WizardEngine {
                 }
 
                 // Reimport
-                app.assetManager->ProcessAssetFile(assetPath);
+                assetManager->ProcessAssetFile(assetPath);
 
                 // Update library path
-                AssetMetaData* metaData = app.assetManager->GetMetaData(assetPath);
+                AssetMetaData* metaData = assetManager->GetMetaData(assetPath);
                 if (metaData) {
                     resource->SetLibraryFile(metaData->libraryFile);
                 }
@@ -266,46 +308,17 @@ namespace WizardEngine {
         }
     }
 
-    Resource* ModuleResources::CreateNewResource(const std::string& assetsFile, ResourceType type) {
-        uint64_t uid = GenerateNewUID();
-
-        Resource* resource = nullptr;
-
-        switch (type) {
-        case ResourceType::TEXTURE:
-            resource = new ResourceTexture(uid);
-            break;
-        case ResourceType::MESH:
-            resource = new ResourceMesh(uid);
-            break;
-        case ResourceType::MODEL:
-            resource = new ResourceModel(uid);
-            break;
-        default:
-            std::cerr << "[ModuleResources] Unsupported resource type" << std::endl;
-            return nullptr;
-        }
-
-        if (resource) {
-            resource->SetAssetFile(assetsFile);
-        }
-
-        return resource;
-    }
-
     ResourceType ModuleResources::GetResourceTypeFromExtension(const std::string& ext) const {
         if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" ||
             ext == ".bmp" || ext == ".tga" || ext == ".dds") {
             return ResourceType::TEXTURE;
         }
-        else if (ext == ".fbx" || ext == ".obj" || ext == ".gltf" || ext == ".glb" || ext == ".dae") {
+        else if (ext == ".fbx" || ext == ".obj" || ext == ".gltf" ||
+            ext == ".glb" || ext == ".dae") {
             return ResourceType::MODEL;
         }
         else if (ext == ".wzm") {
             return ResourceType::MESH;
-        }
-        else if (ext == ".json") {
-            return ResourceType::SCENE;
         }
 
         return ResourceType::UNKNOWN;

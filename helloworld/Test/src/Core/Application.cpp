@@ -23,17 +23,13 @@ Application::Application() : isRunning(true)
     assetManager = std::make_shared<WizardEngine::AssetManager>();
 	moduleResources = std::make_shared<WizardEngine::ModuleResources>();
 
-    // ORDEN DE INICIALIZACIÓN (importante):
-    // 1. ModuleScene (crea el root)
-    // 2. Window
-    // 3. Input
-    // 4. OpenGL (necesita ModuleScene ya inicializado)
-    // 5. Editor (último)
+    AddModule(std::static_pointer_cast<Module>(moduleResources));
     AddModule(std::static_pointer_cast<Module>(moduleScene));
     AddModule(std::static_pointer_cast<Module>(window));
     AddModule(std::static_pointer_cast<Module>(input));
     AddModule(std::static_pointer_cast<Module>(opengl));
     AddModule(std::static_pointer_cast<Module>(editor));
+
 }
 
 Application& Application::GetInstance()
@@ -232,6 +228,7 @@ bool Application::PostUpdate()
     editor->PostUpdate();
     window->PostUpdate();
     input->PostUpdate();
+
     return true;
 }
 
@@ -245,6 +242,12 @@ bool Application::CleanUp()
             break;
         }
     }
-
     return result;
+}
+
+WizardEngine::AssetManager* Application::GetAssetManager() {
+    if (moduleResources) {
+        return moduleResources->GetAssetManager();
+    }
+    return nullptr;
 }
