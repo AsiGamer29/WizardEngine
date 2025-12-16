@@ -57,6 +57,11 @@ public:
     void LoadFromGeometry(MeshGeometry* geom);
     void LoadFromWizardFormat(const WizardEngine::WizardMeshData& meshData);
 
+    void FlipUVsVertically();
+    void FlipUVsHorizontally();
+    void UpdateGPUBuffers();
+    void PrintUVDebugInfo() const;
+
 
     void CalculateAABB();
 

@@ -503,3 +503,83 @@ void ComponentMesh::LoadFromWizardFormat(const WizardEngine::WizardMeshData& mes
         << numVertices << " vertices, "
         << numIndices << " indices" << std::endl;
 }
+
+void ComponentMesh::FlipUVsVertically()
+{
+    std::cout << "[ComponentMesh] Flipping UVs vertically..." << std::endl;
+
+    for (auto& vertex : vertices)
+    {
+        vertex.TexCoords.y = 1.0f - vertex.TexCoords.y;
+    }
+
+    UpdateGPUBuffers();
+    std::cout << "[ComponentMesh] UVs flipped vertically" << std::endl;
+}
+
+void ComponentMesh::FlipUVsHorizontally()
+{
+    std::cout << "[ComponentMesh] Flipping UVs horizontally..." << std::endl;
+
+    for (auto& vertex : vertices)
+    {
+        vertex.TexCoords.x = 1.0f - vertex.TexCoords.x;
+    }
+
+    UpdateGPUBuffers();
+    std::cout << "[ComponentMesh] UVs flipped horizontally" << std::endl;
+}
+
+void ComponentMesh::UpdateGPUBuffers()
+{
+    if (VAO == 0 || VBO == 0)
+    {
+        std::cerr << "[ComponentMesh] Cannot update: buffers not initialized" << std::endl;
+        return;
+    }
+
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(MeshVertex),
+        &vertices[0], GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    std::cout << "[ComponentMesh] GPU buffers updated" << std::endl;
+}
+
+void ComponentMesh::PrintUVDebugInfo() const
+{
+    if (vertices.empty())
+    {
+        std::cout << "[ComponentMesh] No vertices" << std::endl;
+        return;
+    }
+
+    std::cout << "\n=== UV DEBUG INFO ===" << std::endl;
+    std::cout << "Total vertices: " << vertices.size() << std::endl;
+
+    // Primeros 10 UVs
+    int count = std::min(10, (int)vertices.size());
+    std::cout << "\nFirst " << count << " UVs:" << std::endl;
+    for (int i = 0; i < count; i++)
+    {
+        std::cout << "  V" << i << ": U=" << vertices[i].TexCoords.x
+            << " V=" << vertices[i].TexCoords.y << std::endl;
+    }
+
+    // Estadísticas
+    float minU = FLT_MAX, maxU = -FLT_MAX;
+    float minV = FLT_MAX, maxV = -FLT_MAX;
+
+    for (const auto& v : vertices)
+    {
+        minU = std::min(minU, v.TexCoords.x);
+        maxU = std::max(maxU, v.TexCoords.x);
+        minV = std::min(minV, v.TexCoords.y);
+        maxV = std::max(maxV, v.TexCoords.y);
+    }
+
+    std::cout << "\nUV Range:" << std::endl;
+    std::cout << "  U: [" << minU << ", " << maxU << "]" << std::endl;
+    std::cout << "  V: [" << minV << ", " << maxV << "]" << std::endl;
+    std::cout << "=====================\n" << std::endl;
+}

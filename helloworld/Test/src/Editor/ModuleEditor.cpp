@@ -1149,6 +1149,32 @@ bool ModuleEditor::Update()
                         ImGui::Text("Indices: %d", (int)mesh->GetIndexCount());
                         ImGui::Text("Triangles: %d", (int)mesh->GetIndexCount() / 3);
 
+                        ImGui::Separator();
+                        ImGui::Text("UV Tools:");
+
+                        // Botones de flip UVs
+                        if (ImGui::Button("Flip UVs Vertically"))
+                        {
+                            mesh->FlipUVsVertically();
+                            PushEngineLog("UVs flipped vertically");
+                        }
+
+                        ImGui::SameLine();
+
+                        if (ImGui::Button("Flip UVs Horizontally"))
+                        {
+                            mesh->FlipUVsHorizontally();
+                            PushEngineLog("UVs flipped horizontally");
+                        }
+
+                        if (ImGui::Button("Print UV Info"))
+                        {
+                            mesh->PrintUVDebugInfo();
+                        }
+
+                        ImGui::Separator();
+
+                        static bool show_normals = false;
                         ImGui::Checkbox("Show Normals", &show_normals);
 
                         if (app.moduleScene)
