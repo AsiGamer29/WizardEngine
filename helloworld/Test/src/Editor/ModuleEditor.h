@@ -68,6 +68,7 @@ private:
     void LoadModelFromWZD(const std::string& wzdPath, WizardEngine::AssetMetaData* metaData = nullptr);
     void LoadMeshFromWZM(const std::string& wzmPath);
     std::string GetFileExtension(const std::string& filepath);
+    void LoadModelFromAssetBrowser(const std::string& libraryPath, WizardEngine::AssetMetaData* metaData, const std::string& originalAssetPath);
 
     bool inspector_show_checkerboard = false;
     unsigned int inspectorCheckerTex = 0;
