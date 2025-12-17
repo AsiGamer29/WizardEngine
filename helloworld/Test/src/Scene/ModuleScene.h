@@ -64,6 +64,8 @@ public:
 
     WizardEngine::AssetManager* GetAssetManager() { return assetManager; }
 
+    GameObject* LoadModelFromAssetPath(const std::string& assetPath);
+
 private:
     void LoadFromAssimp(const aiScene* scene, const aiNode* node, GameObject* parent, const std::string& basePath);
     void CollectRaycastCandidates(GameObject* go, const Ray& ray, std::vector<RayHit>& candidates);

@@ -927,70 +927,35 @@ bool ModuleEditor::Update()
                     std::string ext = GetFileExtension(assetPath);
                     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
-                    PushEnginePrintf("Asset dropped to viewport: %s", assetPath.c_str());
+                    PushEnginePrintf("=== ASSET DROPPED: %s ===", assetPath.c_str());
 
                     // Load model if it's a model file
                     if (ext == "fbx" || ext == "obj" || ext == "gltf" ||
                         ext == "glb" || ext == "dae")
                     {
-                        if (!app.moduleScene)
+                        PushEngineLog("Detected model file, loading to scene...");
+
+                        // SIMPLE: Llamar directamente a ModuleScene
+                        if (app.moduleScene)
                         {
-                            PushEngineLog("ERROR: ModuleScene not available");
-                        }
-                        else if (!app.moduleResources)
-                        {
-                            PushEngineLog("ERROR: ModuleResources not available");
-                        }
-                        else
-                        {
-                            // Normalizar la ruta
-                            std::string normalizedPath = assetPath;
-                            std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
+                            GameObject* loadedModel = app.moduleScene->LoadModelFromAssetPath(assetPath);
 
-                            // Asegurar que el asset está importado
-                            uint64_t uid = app.moduleResources->Find(normalizedPath);
-
-                            if (uid == 0)
+                            if (loadedModel)
                             {
-                                PushEngineLog("Asset not imported yet, importing...");
-                                uid = app.moduleResources->ImportFile(normalizedPath);
-
-                                if (uid == 0)
-                                {
-                                    PushEngineLog("ERROR: Failed to import asset");
-                                    ImGui::EndDragDropTarget();
-                                    return true;
-                                }
-                            }
-
-                            // Obtener información del recurso
-                            auto info = app.moduleResources->GetResourceInfo(uid);
-
-                            if (info.libraryPath.empty())
-                            {
-                                PushEngineLog("ERROR: Library path is empty after import");
-                            }
-                            else if (!std::filesystem::exists(info.libraryPath))
-                            {
-                                PushEnginePrintf("ERROR: Library file not found: %s", info.libraryPath.c_str());
+                                PushEnginePrintf("SUCCESS: Model loaded: %s", loadedModel->GetName());
+                                app.moduleScene->SetSelectedGameObject(loadedModel);
                             }
                             else
                             {
-                                // Obtener metadata
-                                WizardEngine::AssetManager* assetMgr = app.GetAssetManager();
-                                WizardEngine::AssetMetaData* metaData = nullptr;
-
-                                if (assetMgr)
-                                {
-                                    metaData = assetMgr->GetMetaData(normalizedPath);
-                                }
-
-                                // USAR LA MISMA FUNCIÓN QUE EL DOUBLE-CLICK
-                                LoadModelFromAssetBrowser(info.libraryPath, metaData, normalizedPath);
+                                PushEngineLog("ERROR: Failed to load model");
                             }
                         }
+                        else
+                        {
+                            PushEngineLog("ERROR: ModuleScene not available");
+                        }
                     }
-                    // Handle texture drops
+                    // Handle texture drops (esto ya funciona)
                     else if (ext == "png" || ext == "jpg" || ext == "jpeg" ||
                         ext == "bmp" || ext == "tga")
                     {
