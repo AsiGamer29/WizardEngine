@@ -1,4 +1,5 @@
 #include "GameObject.h"
+#include "Application.h"
 #include "ComponentTransform.h"
 #include "ComponentMesh.h"
 #include "ComponentMaterial.h"
@@ -232,14 +233,14 @@ nlohmann::json GameObject::Serialize() const
     j["Name"] = name;
     j["Active"] = active;
 
-    // Parent UID - CRITICO: guardar 0 si no tiene padre
+    // Parent UID
     if (parent)
     {
         j["ParentUID"] = parent->GetUUID().GetValue();
     }
     else
     {
-        j["ParentUID"] = 0;  // 0 significa "es root"
+        j["ParentUID"] = 0;
     }
 
     // Transform component (siempre existe)
@@ -268,7 +269,33 @@ nlohmann::json GameObject::Serialize() const
         {
             ComponentMesh* mesh = static_cast<ComponentMesh*>(comp);
             compJson["Type"] = "Mesh";
-            compJson["MeshData"] = mesh->SerializeMesh();
+
+            std::string sourcePath = mesh->GetSourceAssetPath();
+
+            std::cout << "[GameObject::Serialize] Mesh for '" << name << "'" << std::endl;
+            std::cout << "  SourceAssetPath: " << (sourcePath.empty() ? "(empty)" : sourcePath) << std::endl;
+
+            // ESTRATEGIA DUAL: Guardar AMBOS - referencia Y datos
+            // Esto asegura compatibilidad y recuperación ante errores
+
+            if (!sourcePath.empty() && std::filesystem::exists(sourcePath))
+            {
+                // Guardar referencia al archivo .wzm
+                compJson["SourceAssetPath"] = sourcePath;
+                std::cout << "  -> Saved reference to: " << sourcePath << std::endl;
+            }
+
+            // SIEMPRE guardar también la geometría como backup
+            // Esto permite cargar la escena incluso si los archivos .wzm se mueven
+            if (mesh->GetVertexCount() > 0)
+            {
+                compJson["MeshData"] = mesh->SerializeMesh();
+                std::cout << "  -> Saved mesh data (" << mesh->GetVertexCount() << " vertices)" << std::endl;
+            }
+            else
+            {
+                std::cout << "  -> WARNING: No vertex data to save!" << std::endl;
+            }
         }
         else if (comp->GetType() == ComponentType::MATERIAL)
         {
@@ -350,43 +377,104 @@ void GameObject::Deserialize(const nlohmann::json& json)
 
             if (type == "Mesh")
             {
-                // Verificar si ya tiene mesh component
+                std::cout << "\n[GameObject::Deserialize] Loading Mesh for: " << name << std::endl;
+
                 ComponentMesh* mesh = GetComponent<ComponentMesh>();
                 if (!mesh)
                 {
-                    mesh = static_cast<ComponentMesh*>(
-                        CreateComponent(ComponentType::MESH)
-                        );
+                    mesh = static_cast<ComponentMesh*>(CreateComponent(ComponentType::MESH));
                 }
 
-                if (mesh && compJson.contains("MeshData"))
+                if (!mesh)
                 {
-                    mesh->DeserializeMesh(compJson["MeshData"]);
+                    std::cerr << "  ERROR: Failed to create ComponentMesh!" << std::endl;
+                    continue;
+                }
+
+                bool meshLoaded = false;
+
+                // PRIORIDAD 1: Intentar cargar desde SourceAssetPath (archivo .wzm)
+                if (compJson.contains("SourceAssetPath"))
+                {
+                    std::string meshPath = compJson["SourceAssetPath"].get<std::string>();
+
+                    if (!meshPath.empty() && std::filesystem::exists(meshPath))
+                    {
+                        std::cout << "  Attempting to load from: " << meshPath << std::endl;
+
+                        WizardEngine::WizardMeshData meshData;
+                        if (WizardEngine::MeshImporter::Load(meshPath, meshData))
+                        {
+                            MeshGeometry geom;
+                            geom.vertices.reserve(meshData.vertices.size());
+
+                            for (const auto& v : meshData.vertices)
+                            {
+                                GeomVertex gv;
+                                gv.Position = v.position;
+                                gv.Normal = v.normal;
+                                gv.TexCoords = v.texCoords;
+                                geom.vertices.push_back(gv);
+                            }
+
+                            geom.indices = meshData.indices;
+                            mesh->LoadFromGeometry(&geom);
+                            mesh->SetSourceAssetPath(meshPath);
+
+                            std::cout << "  Loaded from .wzm: " << meshData.vertices.size() << " vertices" << std::endl;
+                            meshLoaded = true;
+                        }
+                        else
+                        {
+                            std::cerr << "  WARNING: Failed to load .wzm file" << std::endl;
+                        }
+                    }
+                    else
+                    {
+                        std::cout << "  WARNING: .wzm file not found or path empty" << std::endl;
+                    }
+                }
+
+                // PRIORIDAD 2: FALLBACK - Cargar desde MeshData embebido
+                if (!meshLoaded && compJson.contains("MeshData"))
+                {
+                    std::cout << "  Loading from embedded MeshData (fallback)..." << std::endl;
+
+                    try
+                    {
+                        mesh->DeserializeMesh(compJson["MeshData"]);
+                        std::cout << "  Loaded from embedded data: " << mesh->GetVertexCount() << " vertices" << std::endl;
+                        meshLoaded = true;
+                    }
+                    catch (const std::exception& e)
+                    {
+                        std::cerr << "  ERROR: Failed to deserialize mesh data: " << e.what() << std::endl;
+                    }
+                }
+
+                if (!meshLoaded)
+                {
+                    std::cerr << "  ERROR: Could not load mesh from any source!" << std::endl;
                 }
             }
             else if (type == "Material")
             {
-                // Verificar si ya tiene material component
                 ComponentMaterial* mat = GetComponent<ComponentMaterial>();
                 if (!mat)
                 {
-                    mat = static_cast<ComponentMaterial*>(
-                        CreateComponent(ComponentType::MATERIAL)
-                        );
+                    mat = static_cast<ComponentMaterial*>(CreateComponent(ComponentType::MATERIAL));
                 }
 
                 if (mat && compJson.contains("TexturePath"))
                 {
                     std::string texPath = compJson["TexturePath"].get<std::string>();
 
-                    // Solo cargar si hay una ruta valida
                     if (!texPath.empty() && texPath != "checkerboard_default")
                     {
                         mat->LoadTexture(texPath.c_str());
                     }
                     else
                     {
-                        // Cargar textura por defecto (checkerboard)
                         GLuint checkerTex = Texture::CreateCheckerboardTexture(512, 512, 32);
                         mat->SetTexture(checkerTex, "checkerboard_default", 3);
                     }

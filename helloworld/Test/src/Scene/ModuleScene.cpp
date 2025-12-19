@@ -909,137 +909,83 @@ GameObject* ModuleScene::LoadModelFromAssetPath(const std::string& assetPath)
 {
     std::cout << "\n==================================================" << std::endl;
     std::cout << "[ModuleScene] LoadModelFromAssetPath: " << assetPath << std::endl;
-    std::cout << "==================================================" << std::endl;
 
-    if (!assetManager)
+    if (!assetManager || !root)
     {
-        std::cerr << "[ModuleScene] ERROR: AssetManager not initialized" << std::endl;
+        std::cerr << "[ModuleScene] ERROR: AssetManager or root not initialized" << std::endl;
         return nullptr;
     }
 
-    if (!root)
-    {
-        std::cerr << "[ModuleScene] ERROR: Scene root not available" << std::endl;
-        return nullptr;
-    }
-
-    // PASO 1: Normalizar la ruta
+    // Normalizar ruta
     std::string normalizedPath = assetPath;
     std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
-    std::cout << "[ModuleScene] Normalized path: " << normalizedPath << std::endl;
 
-    // PASO 2: Verificar que el archivo existe
     if (!std::filesystem::exists(normalizedPath))
     {
-        std::cerr << "[ModuleScene] ERROR: Asset file not found: " << normalizedPath << std::endl;
+        std::cerr << "[ModuleScene] ERROR: Asset not found: " << normalizedPath << std::endl;
         return nullptr;
     }
 
-    // PASO 3: Procesar con AssetManager (esto genera .wzd, .wzm, .wzt)
-    std::cout << "[ModuleScene] Processing asset with AssetManager..." << std::endl;
+    // Procesar asset
     if (!assetManager->ProcessAssetFile(normalizedPath))
     {
         std::cerr << "[ModuleScene] ERROR: Failed to process asset" << std::endl;
         return nullptr;
     }
 
-    // PASO 4: Obtener la ruta del archivo .wzd generado
+    // Obtener ruta .wzd
     std::string libraryPath = assetManager->GetLibraryPath(normalizedPath);
-    if (libraryPath.empty())
+    if (libraryPath.empty() || !std::filesystem::exists(libraryPath))
     {
-        std::cerr << "[ModuleScene] ERROR: Failed to get library path" << std::endl;
+        std::cerr << "[ModuleScene] ERROR: Library file not found" << std::endl;
         return nullptr;
     }
 
-    std::cout << "[ModuleScene] Library path: " << libraryPath << std::endl;
-
-    // PASO 5: Verificar que el archivo .wzd existe
-    if (!std::filesystem::exists(libraryPath))
-    {
-        std::cerr << "[ModuleScene] ERROR: Library file not found: " << libraryPath << std::endl;
-        return nullptr;
-    }
-
-    // PASO 6: Cargar metadata del modelo
-    WizardEngine::AssetMetaData* metaData = assetManager->GetMetaData(normalizedPath);
-    if (!metaData)
-    {
-        std::cout << "[ModuleScene] WARNING: No metadata found, using defaults" << std::endl;
-    }
-
-    // PASO 7: Cargar el archivo .wzd
-    std::cout << "[ModuleScene] Loading WZD file..." << std::endl;
+    // Cargar modelo
     WizardEngine::WizardModelData modelData;
     if (!WizardEngine::ModelImporter::Load(libraryPath, modelData))
     {
-        std::cerr << "[ModuleScene] ERROR: Failed to load WZD file" << std::endl;
+        std::cerr << "[ModuleScene] ERROR: Failed to load WZD" << std::endl;
         return nullptr;
     }
 
-    std::cout << "[ModuleScene] Model loaded, creating GameObjects..." << std::endl;
-    std::cout << "[ModuleScene] - Meshes: " << modelData.meshes.size() << std::endl;
-    std::cout << "[ModuleScene] - Materials: " << modelData.materials.size() << std::endl;
-    std::cout << "[ModuleScene] - Nodes: " << modelData.nodes.size() << std::endl;
+    std::cout << "[ModuleScene] Model loaded: " << modelData.meshes.size() << " meshes" << std::endl;
 
-    // PASO 8: Crear GameObject root para el modelo
+    // Crear root
     std::string modelName = std::filesystem::path(normalizedPath).stem().string();
     GameObject* modelRoot = CreateGameObject(modelName.c_str(), root);
 
-    if (!modelRoot)
-    {
-        std::cerr << "[ModuleScene] ERROR: Failed to create root GameObject" << std::endl;
-        return nullptr;
-    }
-
-    std::cout << "[ModuleScene] Created root GameObject: " << modelName << std::endl;
-
-    // PASO 9: Aplicar import settings del metadata
+    // Aplicar import settings
+    WizardEngine::AssetMetaData* metaData = assetManager->GetMetaData(normalizedPath);
     ComponentTransform* rootTransform = modelRoot->GetComponent<ComponentTransform>();
+
     if (rootTransform)
     {
         if (metaData)
         {
             rootTransform->SetScale(metaData->importScale);
             rootTransform->SetRotation(glm::quat(glm::radians(metaData->importRotation)));
-            rootTransform->SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
-
-            std::cout << "[ModuleScene] Applied import settings:" << std::endl;
-            std::cout << "  - Scale: (" << metaData->importScale.x << ", "
-                << metaData->importScale.y << ", " << metaData->importScale.z << ")" << std::endl;
         }
-        else
-        {
-            rootTransform->SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
-            rootTransform->SetScale(glm::vec3(1.0f, 1.0f, 1.0f));
-            rootTransform->SetRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
-        }
+        rootTransform->SetPosition(glm::vec3(0.0f));
     }
 
-    // PASO 10: Cargar cada mesh
+    // Cargar meshes
     int meshCount = 0;
     for (size_t i = 0; i < modelData.meshes.size(); i++)
     {
         const auto& meshRef = modelData.meshes[i];
 
-        std::cout << "[ModuleScene] Loading mesh " << (i + 1) << "/" << modelData.meshes.size() << std::endl;
-
-        // Cargar mesh data desde .wzm
+        // Cargar mesh data
         WizardEngine::WizardMeshData meshData;
         if (!WizardEngine::MeshImporter::Load(meshRef.meshFilepath, meshData))
         {
-            std::cerr << "[ModuleScene] WARNING: Failed to load mesh: " << meshRef.meshFilepath << std::endl;
+            std::cerr << "[ModuleScene] WARNING: Failed to load: " << meshRef.meshFilepath << std::endl;
             continue;
         }
 
-        // Crear GameObject hijo para este mesh
+        // Crear GameObject
         std::string meshName = modelName + "_mesh_" + std::to_string(i);
         GameObject* meshObj = CreateGameObject(meshName.c_str(), modelRoot);
-
-        if (!meshObj)
-        {
-            std::cerr << "[ModuleScene] ERROR: Failed to create mesh GameObject" << std::endl;
-            continue;
-        }
 
         // Crear ComponentMesh
         ComponentMesh* meshComp = static_cast<ComponentMesh*>(
@@ -1048,7 +994,7 @@ GameObject* ModuleScene::LoadModelFromAssetPath(const std::string& assetPath)
 
         if (meshComp)
         {
-            // Convertir WizardMeshData a MeshGeometry
+            // Convertir a MeshGeometry
             MeshGeometry geom;
             geom.vertices.reserve(meshData.vertices.size());
 
@@ -1062,15 +1008,18 @@ GameObject* ModuleScene::LoadModelFromAssetPath(const std::string& assetPath)
             }
 
             geom.indices = meshData.indices;
-            meshComp->LoadFromGeometry(&geom);
 
-            std::cout << "[ModuleScene]   - Vertices: " << meshData.vertices.size() << std::endl;
-            std::cout << "[ModuleScene]   - Indices: " << meshData.indices.size() << std::endl;
+            // CRÍTICO: Cargar geometría Y establecer path
+            meshComp->LoadFromGeometry(&geom);
+            meshComp->SetSourceAssetPath(meshRef.meshFilepath);  // ¡IMPORTANTE!
+
+            std::cout << "[ModuleScene]   Mesh " << i << ": " << meshData.vertices.size()
+                << " verts, path: " << meshRef.meshFilepath << std::endl;
 
             meshCount++;
         }
 
-        // Crear ComponentMaterial
+        // Cargar material
         ComponentMaterial* matComp = static_cast<ComponentMaterial*>(
             meshObj->CreateComponent(ComponentType::MATERIAL)
             );
@@ -1081,9 +1030,6 @@ GameObject* ModuleScene::LoadModelFromAssetPath(const std::string& assetPath)
 
             if (!matData.diffuseTexture.empty())
             {
-                std::cout << "[ModuleScene]   - Loading texture: " << matData.diffuseTexture << std::endl;
-
-                // Cargar textura desde .wzt
                 WizardEngine::WizardTextureData texData;
                 if (WizardEngine::TextureImporter::Load(matData.diffuseTexture, texData))
                 {
@@ -1102,18 +1048,15 @@ GameObject* ModuleScene::LoadModelFromAssetPath(const std::string& assetPath)
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
                     matComp->SetTexture(texID, matData.diffuseTexture.c_str(), texData.channels);
-                    std::cout << "[ModuleScene]   - Texture loaded successfully" << std::endl;
                 }
                 else
                 {
-                    std::cout << "[ModuleScene]   - Failed to load texture, using checkerboard" << std::endl;
                     GLuint checkerTex = Texture::CreateCheckerboardTexture(512, 512, 32);
                     matComp->SetTexture(checkerTex, "checkerboard_default", 3);
                 }
             }
             else
             {
-                std::cout << "[ModuleScene]   - No texture, using checkerboard" << std::endl;
                 GLuint checkerTex = Texture::CreateCheckerboardTexture(512, 512, 32);
                 matComp->SetTexture(checkerTex, "checkerboard_default", 3);
             }
@@ -1122,14 +1065,10 @@ GameObject* ModuleScene::LoadModelFromAssetPath(const std::string& assetPath)
         meshObj->UpdateAABB();
     }
 
-    // PASO 11: Actualizar AABBs y seleccionar
     UpdateAllAABBs();
 
-    std::cout << "\n==================================================" << std::endl;
-    std::cout << "[ModuleScene] SUCCESS!" << std::endl;
-    std::cout << "[ModuleScene] Model: " << modelName << std::endl;
-    std::cout << "[ModuleScene] Meshes loaded: " << meshCount << "/" << modelData.meshes.size() << std::endl;
-    std::cout << "==================================================\n" << std::endl;
+    std::cout << "[ModuleScene] SUCCESS: " << meshCount << "/" << modelData.meshes.size()
+        << " meshes loaded\n==================================================" << std::endl;
 
     return modelRoot;
 }

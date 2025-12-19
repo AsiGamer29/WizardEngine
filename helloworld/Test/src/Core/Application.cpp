@@ -21,7 +21,7 @@ Application::Application() : isRunning(true)
         -90.0f, 0.0f
     );
     assetManager = std::make_shared<WizardEngine::AssetManager>();
-	moduleResources = std::make_shared<WizardEngine::ModuleResources>();
+    moduleResources = std::make_shared<WizardEngine::ModuleResources>();
 
     AddModule(std::static_pointer_cast<Module>(moduleResources));
     AddModule(std::static_pointer_cast<Module>(moduleScene));
@@ -29,7 +29,6 @@ Application::Application() : isRunning(true)
     AddModule(std::static_pointer_cast<Module>(input));
     AddModule(std::static_pointer_cast<Module>(opengl));
     AddModule(std::static_pointer_cast<Module>(editor));
-
 }
 
 Application& Application::GetInstance()
@@ -66,120 +65,32 @@ bool Application::Start()
         }
     }
 
-    // AHORA cargar el modelo (después de que OpenGL esté inicializado)
     if (moduleScene && ret)
     {
-        std::string modelPath = "../Assets/Models/Street/street2.FBX";
+        std::string scenePath = "Assets/Scenes/Street.json";
 
-        std::cout << "[Application] Loading street model..." << std::endl;
+        std::cout << "[Application] Attempting to load scene: " << scenePath << std::endl;
 
-        if (std::filesystem::exists(modelPath))
+        if (std::filesystem::exists(scenePath))
         {
-            moduleScene->LoadModel(modelPath.c_str());
+            std::cout << "[Application] Scene file found, loading..." << std::endl;
 
-            // Asignar texturas
-            AssignStreetTextures();
+            if (moduleScene->LoadScene(scenePath))
+            {
+                std::cout << "[Application] Scene loaded successfully!" << std::endl;
 
-            std::cout << "[Application] Street model loaded and textured!" << std::endl;
-        }
-        else
-        {
-            std::cerr << "[Application] WARNING: street2.FBX not found at: " << modelPath << std::endl;
+                // Actualizar AABBs después de cargar
+                moduleScene->UpdateAllAABBs();
+
+                std::cout << "[Application] Total GameObjects: "
+                    << moduleScene->GetAllGameObjects().size() << std::endl;
+            }
         }
     }
 
     return ret;
 }
 
-void Application::AssignStreetTextures()
-{
-    if (!moduleScene) return;
-
-    std::cout << "[Application] Assigning textures to street model..." << std::endl;
-
-    // Mapeo de nombres de GameObjects a texturas
-    std::map<std::string, std::string> textureMap = {
-        {"building 01", "../Assets/Models/Street/building 01_c.tga"},
-        {"building_01", "../Assets/Models/Street/building 01_c.tga"},
-
-        {"building 06", "../Assets/Models/Street/building 06_c.tga"},
-        {"building_06", "../Assets/Models/Street/building 06_c.tga"},
-
-        {"building 016", "../Assets/Models/Street/building 016_c.tga"},
-        {"building_016", "../Assets/Models/Street/building 016_c.tga"},
-
-        {"building 025", "../Assets/Models/Street/building 025_c.tga"},
-        {"building_025", "../Assets/Models/Street/building 025_c.tga"},
-
-        {"building03", "../Assets/Models/Street/building03_c.tga"},
-        {"building_03", "../Assets/Models/Street/building03_c.tga"},
-
-        {"building05", "../Assets/Models/Street/building05_c.tga"},
-        {"building_05", "../Assets/Models/Street/building05_c.tga"},
-
-        {"Building_V01", "../Assets/Models/Street/Building_V01_C.png"},
-        {"building_v01", "../Assets/Models/Street/Building_V01_C.png"},
-
-        {"Building_V02", "../Assets/Models/Street/Building_V02_C.png"},
-        {"building_v02", "../Assets/Models/Street/Building_V02_C.png"}
-    };
-
-    const std::vector<GameObject*>& allObjects = moduleScene->GetAllGameObjects();
-    int texturedCount = 0;
-
-    for (GameObject* obj : allObjects)
-    {
-        if (!obj) continue;
-
-        std::string objName = obj->GetName();
-        std::string objNameLower = objName;
-
-        std::transform(objNameLower.begin(), objNameLower.end(), objNameLower.begin(), ::tolower);
-
-        for (const auto& pair : textureMap)
-        {
-            std::string keyLower = pair.first;
-            std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), ::tolower);
-
-            if (objNameLower.find(keyLower) != std::string::npos)
-            {
-                ComponentMaterial* mat = obj->GetComponent<ComponentMaterial>();
-
-                if (!mat)
-                {
-                    mat = static_cast<ComponentMaterial*>(
-                        obj->CreateComponent(ComponentType::MATERIAL)
-                        );
-                }
-
-                if (mat)
-                {
-                    const std::string& texturePath = pair.second;
-
-                    if (std::filesystem::exists(texturePath))
-                    {
-                        mat->LoadTexture(texturePath.c_str());
-                        std::cout << "[Application]   - Assigned texture to '" << objName
-                            << "': " << texturePath << std::endl;
-                        texturedCount++;
-                    }
-                    else
-                    {
-                        std::cout << "[Application]   - Texture not found for '" << objName
-                            << "': " << texturePath << std::endl;
-
-                        GLuint checkerTex = Texture::CreateCheckerboardTexture(512, 512, 32);
-                        mat->SetTexture(checkerTex, "checkerboard_default", 3);
-                    }
-                }
-
-                break;
-            }
-        }
-    }
-
-    std::cout << "[Application] Textured " << texturedCount << " objects" << std::endl;
-}
 
 bool Application::Update()
 {

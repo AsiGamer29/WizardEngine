@@ -41,6 +41,8 @@ private:
     void CleanupBuffers();
     void UpdateFlatVertices() const;
 
+    std::string sourceAssetPath;
+
 
 public:
     ComponentMesh(GameObject* owner);
@@ -56,6 +58,9 @@ public:
     // Cargar desde geometría procedural
     void LoadFromGeometry(MeshGeometry* geom);
     void LoadFromWizardFormat(const WizardEngine::WizardMeshData& meshData);
+
+    void SetSourceAssetPath(const std::string& path) { sourceAssetPath = path; }
+    const std::string& GetSourceAssetPath() const { return sourceAssetPath; }
 
     void FlipUVsVertically();
     void FlipUVsHorizontally();
