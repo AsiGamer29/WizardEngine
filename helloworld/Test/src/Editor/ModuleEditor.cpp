@@ -951,29 +951,54 @@ bool ModuleEditor::Update()
                     if (ext == "fbx" || ext == "obj" || ext == "gltf" ||
                         ext == "glb" || ext == "dae")
                     {
-                        PushEngineLog("Detected model file, loading to scene...");
+                        PushEngineLog("Detected model file, loading to scene with import settings...");
 
-                        // SIMPLE: Llamar directamente a ModuleScene
-                        if (app.moduleScene)
+                        // Normalizar path
+                        std::string normalizedPath = assetPath;
+                        std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
+
+                        if (app.moduleResources)
                         {
-                            GameObject* loadedModel = app.moduleScene->LoadModelFromAssetPath(assetPath);
+                            // Buscar o importar el asset
+                            uint64_t uid = app.moduleResources->Find(normalizedPath);
 
-                            if (loadedModel)
+                            if (uid == 0) {
+                                PushEngineLog("Asset not imported yet, importing...");
+                                uid = app.moduleResources->ImportFile(normalizedPath);
+                            }
+
+                            if (uid != 0)
                             {
-                                PushEnginePrintf("SUCCESS: Model loaded: %s", loadedModel->GetName());
-                                app.moduleScene->SetSelectedGameObject(loadedModel);
+                                auto info = app.moduleResources->GetResourceInfo(uid);
+
+                                if (!info.libraryPath.empty() && std::filesystem::exists(info.libraryPath))
+                                {
+                                    WizardEngine::AssetManager* assetMgr = app.GetAssetManager();
+                                    WizardEngine::AssetMetaData* metaData = nullptr;
+
+                                    if (assetMgr) {
+                                        metaData = assetMgr->GetMetaData(normalizedPath);
+                                    }
+
+                                    // Cargar con import settings
+                                    LoadModelFromAssetBrowser(info.libraryPath, metaData, normalizedPath);
+                                }
+                                else
+                                {
+                                    PushEnginePrintf("ERROR: Library file not found: %s", info.libraryPath.c_str());
+                                }
                             }
                             else
                             {
-                                PushEngineLog("ERROR: Failed to load model");
+                                PushEngineLog("ERROR: Failed to import asset");
                             }
                         }
                         else
                         {
-                            PushEngineLog("ERROR: ModuleScene not available");
+                            PushEngineLog("ERROR: ModuleResources not available");
                         }
                     }
-                    // Handle texture drops (esto ya funciona)
+                    // Handle texture drops
                     else if (ext == "png" || ext == "jpg" || ext == "jpeg" ||
                         ext == "bmp" || ext == "tga")
                     {
@@ -2603,7 +2628,8 @@ void ModuleEditor::DrawAssetBrowser()
     if (ImGui::Button("<"))
     {
         std::filesystem::path current(currentAssetPath);
-        if (current.has_parent_path() && current != "Assets/")
+        std::string rootCheck = rootBrowserPath;
+        if (current.has_parent_path() && current != rootCheck)
         {
             currentAssetPath = current.parent_path().string() + "/";
             ModuleEditor::PushEnginePrintf("Navigated to: %s", currentAssetPath.c_str());
@@ -2621,6 +2647,32 @@ void ModuleEditor::DrawAssetBrowser()
         }
     }
 
+    ImGui::SameLine();
+    ImGui::Spacing();
+    ImGui::SameLine();
+
+    // Root folder selector
+    const char* rootOptions[] = { "Assets", "Library" };
+    static int currentRootIndex = 0;
+    int prevRootIndex = currentRootIndex;
+    
+    ImGui::SetNextItemWidth(100.0f);
+    if (ImGui::Combo("##RootFolder", &currentRootIndex, rootOptions, 2))
+    {
+        if (currentRootIndex == 0)
+        {
+            rootBrowserPath = "Assets/";
+            currentAssetPath = "Assets/";
+            PushEngineLog("Switched to Assets folder");
+        }
+        else
+        {
+            rootBrowserPath = "Library/";
+            currentAssetPath = "Library/";
+            PushEngineLog("Switched to Library folder");
+        }
+    }
+
     ImGui::Separator();
 
     // Split view: Folder tree on left, assets on right
@@ -2629,8 +2681,8 @@ void ModuleEditor::DrawAssetBrowser()
         ImGui::Text("Folders");
         ImGui::Separator();
 
-        std::filesystem::path assetsPath("Assets/");
-        DrawFolderTree(assetsPath, std::filesystem::path(currentAssetPath));
+        std::filesystem::path rootPath(rootBrowserPath);
+        DrawFolderTree(rootPath, std::filesystem::path(currentAssetPath));
     }
     ImGui::EndChild();
 
@@ -2740,7 +2792,19 @@ void ModuleEditor::DrawAssetGrid()
                 currentAssetPath = filepath + "/";
                 PushEnginePrintf("Navigated to: %s", currentAssetPath.c_str());
             }
-            // Si es un modelo, cargarlo
+            // Si es un archivo WZD (modelo de Library), cargarlo
+            else if (ext == ".wzd")
+            {
+                PushEnginePrintf("Double-clicked WZD model: %s", filepath.c_str());
+
+                if (app.moduleScene)
+                {
+                    std::string normalizedPath = filepath;
+                    std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
+                    LoadModelFromWZD(normalizedPath, nullptr);
+                }
+            }
+            // Si es un modelo original, cargarlo
             else if (ext == ".fbx" || ext == ".obj" || ext == ".gltf" ||
                 ext == ".glb" || ext == ".dae")
             {

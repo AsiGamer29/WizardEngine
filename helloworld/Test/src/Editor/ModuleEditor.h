@@ -134,8 +134,9 @@ private:
     static bool engine_log_auto_scroll;
 
     // Asset Browser
-    std::string currentAssetPath = "../Assets/";
+    std::string currentAssetPath = "Assets/";
     std::string selectedAssetPath;
+    std::string rootBrowserPath = "Assets/";
 
     void DrawAssetBrowser();
     void DrawFolderTree(const std::filesystem::path& path, const std::filesystem::path& currentPath);
