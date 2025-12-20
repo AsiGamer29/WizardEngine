@@ -578,9 +578,6 @@ bool ModuleEditor::Update()
     if (show_load_scene_popup)
         ShowLoadScenePopup();
 
-    // Simulation control toolbar
-    DrawSimulationControls();
-
     // Main menu bar
     if (ImGui::BeginMainMenuBar())
     {
@@ -1745,6 +1742,9 @@ bool ModuleEditor::Update()
             ImGui::End();
         }
     }
+
+    // Simulation control toolbar (rendered last to stay on top)
+    DrawSimulationControls();
 
     return true;
 }
@@ -2976,15 +2976,19 @@ void ModuleEditor::DrawSimulationControls()
     ImVec2 work_pos = viewport->WorkPos;
     ImVec2 work_size = viewport->WorkSize;
 
-    // Toolbar window
+    // Toolbar window - Always on top
     ImGui::SetNextWindowPos(ImVec2(work_pos.x + work_size.x * 0.5f - 100, work_pos.y + 20), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(200, 50), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.95f);
+    ImGui::SetNextWindowViewport(viewport->ID);
     
     ImGuiWindowFlags toolbar_flags = ImGuiWindowFlags_NoDecoration | 
                                      ImGuiWindowFlags_NoMove | 
                                      ImGuiWindowFlags_NoSavedSettings |
                                      ImGuiWindowFlags_NoFocusOnAppearing |
-                                     ImGuiWindowFlags_NoNav;
+                                     ImGuiWindowFlags_NoNav |
+                                     ImGuiWindowFlags_AlwaysAutoResize |
+                                     ImGuiWindowFlags_NoDocking;
 
     ImGui::Begin("SimulationControls", nullptr, toolbar_flags);
 
