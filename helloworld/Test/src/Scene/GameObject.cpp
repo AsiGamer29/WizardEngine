@@ -139,51 +139,36 @@ void GameObject::UpdateAABB()
         return;
     }
 
+    // Obtener AABB local del mesh
     AABB localAABB = mesh->GetLocalAABB();
-    if (localAABB.min == glm::vec3(0.0f) && localAABB.max == glm::vec3(0.0f))
+
+    if (!localAABB.IsValid())
     {
         hasAABB = false;
         return;
     }
 
+    // CRÍTICO: Forzar actualización de matriz global ANTES de transformar
     glm::mat4 globalMatrix = transform->GetGlobalMatrix();
 
-    glm::vec3 corners[8] = {
-        glm::vec3(localAABB.min.x, localAABB.min.y, localAABB.min.z),
-        glm::vec3(localAABB.max.x, localAABB.min.y, localAABB.min.z),
-        glm::vec3(localAABB.min.x, localAABB.max.y, localAABB.min.z),
-        glm::vec3(localAABB.max.x, localAABB.max.y, localAABB.min.z),
-        glm::vec3(localAABB.min.x, localAABB.min.y, localAABB.max.z),
-        glm::vec3(localAABB.max.x, localAABB.min.y, localAABB.max.z),
-        glm::vec3(localAABB.min.x, localAABB.max.y, localAABB.max.z),
-        glm::vec3(localAABB.max.x, localAABB.max.y, localAABB.max.z)
-    };
+    // Transformar el AABB local al espacio global usando el método del AABB
+    aabb = localAABB.Transform(globalMatrix);
+    hasAABB = aabb.IsValid();
 
-    glm::vec3 transformedCorners[8];
-    for (int i = 0; i < 8; ++i)
+    // Recursivamente actualizar AABBs de hijos
+    for (GameObject* child : children)
     {
-        glm::vec4 worldPos = globalMatrix * glm::vec4(corners[i], 1.0f);
-        transformedCorners[i] = glm::vec3(worldPos);
+        if (child)
+        {
+            child->UpdateAABB();
+        }
     }
-
-    glm::vec3 newMin = transformedCorners[0];
-    glm::vec3 newMax = transformedCorners[0];
-
-    for (int i = 1; i < 8; ++i)
-    {
-        newMin = glm::min(newMin, transformedCorners[i]);
-        newMax = glm::max(newMax, transformedCorners[i]);
-    }
-
-    aabb.min = newMin;
-    aabb.max = newMax;
-    hasAABB = true;
 }
 
 void GameObject::SetAABB(const AABB& newAABB)
 {
     aabb = newAABB;
-    hasAABB = true;
+    hasAABB = newAABB.IsValid();
 }
 
 bool GameObject::IntersectRay(const Ray& ray, RayHit& hit)
@@ -193,23 +178,18 @@ bool GameObject::IntersectRay(const Ray& ray, RayHit& hit)
         return false;
     }
 
-    glm::vec3 tMin = (aabb.min - ray.origin) / ray.direction;
-    glm::vec3 tMax = (aabb.max - ray.origin) / ray.direction;
+    // Usar el método robusto del AABB que maneja división por cero
+    float tMin, tMax;
 
-    glm::vec3 t1 = glm::min(tMin, tMax);
-    glm::vec3 t2 = glm::max(tMin, tMax);
-
-    float tNear = glm::max(glm::max(t1.x, t1.y), t1.z);
-    float tFar = glm::min(glm::min(t2.x, t2.y), t2.z);
-
-    if (tNear > tFar || tFar < 0.0f)
+    if (!aabb.IntersectsRay(ray, tMin, tMax))
     {
         return false;
     }
 
-    float t = (tNear > 0.0f) ? tNear : tFar;
+    // Si hay intersección, verificar si es la más cercana hasta ahora
+    float t = (tMin > 0.0f) ? tMin : tMax;
 
-    if (t < hit.distance)
+    if (t >= 0.0f && t < hit.distance)
     {
         hit.hit = true;
         hit.distance = t;

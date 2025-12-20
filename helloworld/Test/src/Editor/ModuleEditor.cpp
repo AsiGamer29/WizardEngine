@@ -1997,8 +1997,17 @@ void ModuleEditor::HandleGizmo()
             }
         }
 
-        // Actualizar AABBs
-        app.moduleScene->UpdateAllAABBs();
+        // CRÍTICO: Actualizar AABB del objeto manipulado
+        selected->UpdateAABB();
+
+        // También actualizar hijos si los tiene
+        for (GameObject* child : selected->GetChildren())
+        {
+            if (child)
+            {
+                child->UpdateAABB();
+            }
+        }
     }
 }
 

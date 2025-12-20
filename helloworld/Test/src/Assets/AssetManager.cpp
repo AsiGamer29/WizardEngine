@@ -43,8 +43,6 @@ namespace WizardEngine {
         std::string ext = GetFileExtension(filepath);
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
-        std::cout << "[AssetManager] Processing: " << filepath << std::endl;
-
         // Check if .meta exists
         std::string metaPath = MetaFile::GetMetaPath(filepath);
         bool metaExists = std::filesystem::exists(metaPath);
@@ -52,8 +50,8 @@ namespace WizardEngine {
         AssetMetaData metaData;
 
         if (metaExists) {
-            // Load existing meta
-            if (!MetaFile::Load(metaPath, metaData)) {
+            // Load existing meta silently
+            if (!MetaFile::LoadSilent(metaPath, metaData)) {
                 std::cerr << "[AssetManager] Failed to load meta, will recreate" << std::endl;
                 metaExists = false;
             }
@@ -73,10 +71,12 @@ namespace WizardEngine {
             (metaData.lastImportTimestamp == 0);
 
         if (!needsImport) {
-            std::cout << "[AssetManager] Asset up-to-date, skipping import" << std::endl;
+            // Silently cache and skip
             metaCache[filepath] = metaData;
             return true;
         }
+
+        std::cout << "[AssetManager] Processing: " << filepath << std::endl;
 
         // Determine asset type and process
         if (ext == "fbx" || ext == "obj" || ext == "gltf" || ext == "glb" || ext == "dae") {
@@ -219,10 +219,21 @@ namespace WizardEngine {
             return true; // No meta = needs import
         }
 
+        // Check cache first
+        auto it = metaCache.find(assetPath);
+        if (it != metaCache.end()) {
+            uint64_t currentTimestamp = GetFileTimestamp(assetPath);
+            return currentTimestamp != it->second.sourceTimestamp;
+        }
+
+        // Load silently if not in cache
         AssetMetaData metaData;
-        if (!MetaFile::Load(metaPath, metaData)) {
+        if (!MetaFile::LoadSilent(metaPath, metaData)) {
             return true; // Can't load meta = needs import
         }
+
+        // Cache for future use
+        metaCache[assetPath] = metaData;
 
         uint64_t currentTimestamp = GetFileTimestamp(assetPath);
         return currentTimestamp != metaData.sourceTimestamp;
@@ -234,11 +245,11 @@ namespace WizardEngine {
             return it->second.libraryFile;
         }
 
-        // Try to load from meta file
+        // Try to load from meta file silently
         std::string metaPath = MetaFile::GetMetaPath(assetPath);
         if (std::filesystem::exists(metaPath)) {
             AssetMetaData metaData;
-            if (MetaFile::Load(metaPath, metaData)) {
+            if (MetaFile::LoadSilent(metaPath, metaData)) {
                 metaCache[assetPath] = metaData;
                 return metaData.libraryFile;
             }
@@ -256,7 +267,7 @@ namespace WizardEngine {
         std::string metaPath = MetaFile::GetMetaPath(assetPath);
         if (std::filesystem::exists(metaPath)) {
             AssetMetaData metaData;
-            if (MetaFile::Load(metaPath, metaData)) {
+            if (MetaFile::LoadSilent(metaPath, metaData)) {
                 metaCache[assetPath] = metaData;
                 return &metaCache[assetPath];
             }
@@ -285,11 +296,13 @@ namespace WizardEngine {
                 }
             }
             else {
-                // Load meta into cache even if not importing
-                AssetMetaData metaData;
+                // Load meta into cache silently
                 std::string metaPath = MetaFile::GetMetaPath(filepath);
-                if (MetaFile::Load(metaPath, metaData)) {
-                    metaCache[filepath] = metaData;
+                if (std::filesystem::exists(metaPath)) {
+                    AssetMetaData metaData;
+                    if (MetaFile::LoadSilent(metaPath, metaData)) {
+                        metaCache[filepath] = metaData;
+                    }
                 }
                 skippedCount++;
             }

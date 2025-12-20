@@ -77,11 +77,9 @@ void ComponentTransform::MarkGlobalDirty()
     globalMatrixDirty = true;
     PropagateGlobalDirtyToChildren();
 
-    if (owner)
-    {
-        owner->UpdateAABB();
-    }
+    // IMPORTANTE: NO actualizar AABB aquí, se hace después de que las matrices estén actualizadas
 }
+
 void ComponentTransform::PropagateGlobalDirtyToChildren()
 {
     if (!owner) return;
@@ -200,6 +198,11 @@ void ComponentTransform::OnEditor()
         if (ImGui::DragFloat3("Position", posArr, 0.1f))
         {
             SetPosition(glm::vec3(posArr[0], posArr[1], posArr[2]));
+            // Actualizar AABB después de cambiar la posición
+            if (owner)
+            {
+                owner->UpdateAABB();
+            }
         }
 
         float rotArr[3] = { euler.x, euler.y, euler.z };
@@ -208,12 +211,22 @@ void ComponentTransform::OnEditor()
             glm::vec3 rads = glm::radians(glm::vec3(rotArr[0], rotArr[1], rotArr[2]));
             glm::quat newQ = glm::quat(rads);
             SetRotation(newQ);
+            // Actualizar AABB después de cambiar la rotación
+            if (owner)
+            {
+                owner->UpdateAABB();
+            }
         }
 
         float sclArr[3] = { scl.x, scl.y, scl.z };
         if (ImGui::DragFloat3("Scale", sclArr, 0.01f))
         {
             SetScale(glm::vec3(sclArr[0], sclArr[1], sclArr[2]));
+            // Actualizar AABB después de cambiar la escala
+            if (owner)
+            {
+                owner->UpdateAABB();
+            }
         }
 
         ImGui::Separator();

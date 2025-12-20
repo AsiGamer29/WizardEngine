@@ -67,7 +67,7 @@ bool Application::Start()
 
     if (moduleScene && ret)
     {
-        std::string scenePath = "Assets/Scenes/Street.json";
+        std::string scenePath = "../Assets/Scenes/Street.json";
 
         std::cout << "[Application] Attempting to load scene: " << scenePath << std::endl;
 

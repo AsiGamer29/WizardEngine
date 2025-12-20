@@ -77,6 +77,10 @@ namespace WizardEngine {
         return data;
     }
 
+    AssetMetaData MetaFile::DeserializeFromJson(const nlohmann::json& json) {
+        return Deserialize(json);
+    }
+
     bool MetaFile::Save(const std::string& metaPath, const AssetMetaData& data) {
         try {
             nlohmann::json j = Serialize(data);
@@ -118,6 +122,25 @@ namespace WizardEngine {
         }
         catch (const std::exception& e) {
             std::cerr << "[MetaFile] Error loading: " << e.what() << std::endl;
+            return false;
+        }
+    }
+
+    bool MetaFile::LoadSilent(const std::string& metaPath, AssetMetaData& outData) {
+        try {
+            std::ifstream file(metaPath);
+            if (!file.is_open()) {
+                return false;
+            }
+
+            nlohmann::json j;
+            file >> j;
+            file.close();
+
+            outData = Deserialize(j);
+            return true;
+        }
+        catch (const std::exception&) {
             return false;
         }
     }

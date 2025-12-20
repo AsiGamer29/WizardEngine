@@ -7,16 +7,26 @@
 // Helper function para intersección ray-AABB
 static bool IntersectRayAABB(const Ray& ray, const AABB& aabb)
 {
+    // Manejo de división por cero
     float tmin = -std::numeric_limits<float>::infinity();
     float tmax = std::numeric_limits<float>::infinity();
 
     for (int i = 0; i < 3; ++i)
     {
-        float t1 = (aabb.min[i] - ray.origin[i]) / ray.direction[i];
-        float t2 = (aabb.max[i] - ray.origin[i]) / ray.direction[i];
+        if (std::abs(ray.direction[i]) < 1e-6f)
+        {
+            // Rayo paralelo a este plano
+            if (ray.origin[i] < aabb.min[i] || ray.origin[i] > aabb.max[i])
+                return false;
+        }
+        else
+        {
+            float t1 = (aabb.min[i] - ray.origin[i]) / ray.direction[i];
+            float t2 = (aabb.max[i] - ray.origin[i]) / ray.direction[i];
 
-        tmin = std::max(tmin, std::min(t1, t2));
-        tmax = std::min(tmax, std::max(t1, t2));
+            tmin = std::max(tmin, std::min(t1, t2));
+            tmax = std::min(tmax, std::max(t1, t2));
+        }
     }
 
     return tmax >= tmin && tmax >= 0.0f;
@@ -127,9 +137,16 @@ void OctreeNode::QueryRay(const Ray& ray, std::vector<GameObject*>& result) cons
     // Comprobar objetos en este nodo
     for (const auto& obj : objects)
     {
-        if (obj.gameObject && IntersectRayAABB(ray, obj.worldAABB))
+        if (obj.gameObject)
         {
-            result.push_back(obj.gameObject);
+            // CRÍTICO: Usar el AABB actualizado del GameObject, no el guardado en el octree
+            // El AABB guardado puede estar desactualizado después de mover el objeto
+            AABB currentAABB = obj.gameObject->GetAABB();
+
+            if (currentAABB.IsValid() && IntersectRayAABB(ray, currentAABB))
+            {
+                result.push_back(obj.gameObject);
+            }
         }
     }
 
@@ -149,7 +166,7 @@ void OctreeNode::QueryRay(const Ray& ray, std::vector<GameObject*>& result) cons
 void OctreeNode::Clear()
 {
     objects.clear();
-    
+
     if (isDivided)
     {
         for (int i = 0; i < 8; ++i)
@@ -167,19 +184,14 @@ void OctreeNode::Clear()
 void OctreeNode::Rebuild(const std::vector<GameObject*>& allObjects)
 {
     Clear();
-    
+
     for (GameObject* obj : allObjects)
     {
         if (!obj || !obj->HasAABB())
             continue;
 
-        ComponentTransform* transform = obj->GetComponent<ComponentTransform>();
+        // Obtener el AABB actualizado del GameObject
         AABB worldAABB = obj->GetAABB();
-        
-        if (transform)
-        {
-            worldAABB = worldAABB.Transform(transform->GetGlobalMatrix());
-        }
 
         Insert(obj, worldAABB);
     }
@@ -206,12 +218,12 @@ void OctreeNode::Subdivide()
     {
         glm::vec3 childCenter = center + offsets[i] * halfSize * 0.5f;
         glm::vec3 childHalfSize = halfSize * 0.5f;
-        
+
         AABB childBounds(childCenter - childHalfSize, childCenter + childHalfSize);
         children[i] = std::make_unique<OctreeNode>(
-            childBounds, 
-            maxObjectsPerNode, 
-            maxDepth, 
+            childBounds,
+            maxObjectsPerNode,
+            maxDepth,
             currentDepth + 1
         );
     }
@@ -221,14 +233,14 @@ void OctreeNode::Subdivide()
 
 bool OctreeNode::ShouldSubdivide() const
 {
-    return currentDepth < maxDepth && 
-           objects.size() > static_cast<size_t>(maxObjectsPerNode);
+    return currentDepth < maxDepth &&
+        objects.size() > static_cast<size_t>(maxObjectsPerNode);
 }
 
 void OctreeNode::GetAllBounds(std::vector<AABB>& outBounds) const
 {
     outBounds.push_back(bounds);
-    
+
     if (isDivided)
     {
         for (int i = 0; i < 8; ++i)
@@ -244,7 +256,7 @@ void OctreeNode::GetAllBounds(std::vector<AABB>& outBounds) const
 int OctreeNode::GetObjectCount() const
 {
     int count = static_cast<int>(objects.size());
-    
+
     if (isDivided)
     {
         for (int i = 0; i < 8; ++i)
@@ -255,7 +267,7 @@ int OctreeNode::GetObjectCount() const
             }
         }
     }
-    
+
     return count;
 }
 
@@ -289,13 +301,8 @@ void Octree::Build(const std::vector<GameObject*>& allObjects)
         if (!obj || !obj->HasAABB())
             continue;
 
-        ComponentTransform* transform = obj->GetComponent<ComponentTransform>();
+        // Obtener AABB actualizado del GameObject
         AABB worldAABB = obj->GetAABB();
-        
-        if (transform)
-        {
-            worldAABB = worldAABB.Transform(transform->GetGlobalMatrix());
-        }
 
         root->Insert(obj, worldAABB);
     }
@@ -379,13 +386,8 @@ AABB Octree::CalculateWorldBounds(const std::vector<GameObject*>& objects) const
         if (!obj || !obj->HasAABB())
             continue;
 
-        ComponentTransform* transform = obj->GetComponent<ComponentTransform>();
+        // Obtener AABB actualizado del GameObject
         AABB worldAABB = obj->GetAABB();
-        
-        if (transform)
-        {
-            worldAABB = worldAABB.Transform(transform->GetGlobalMatrix());
-        }
 
         minBound = glm::min(minBound, worldAABB.min);
         maxBound = glm::max(maxBound, worldAABB.max);
@@ -394,6 +396,6 @@ AABB Octree::CalculateWorldBounds(const std::vector<GameObject*>& objects) const
     // Añadir padding del 10%
     glm::vec3 size = maxBound - minBound;
     glm::vec3 padding = size * 0.1f;
-    
+
     return AABB(minBound - padding, maxBound + padding);
 }
