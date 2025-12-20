@@ -13,6 +13,8 @@
 
 #include <filesystem>
 #include <map>
+#include <fstream>
+#include <sstream>
 
 #include "GeometryGenerator.h"
 #include "GameObject.h"
@@ -575,6 +577,9 @@ bool ModuleEditor::Update()
 
     if (show_load_scene_popup)
         ShowLoadScenePopup();
+
+    // Simulation control toolbar
+    DrawSimulationControls();
 
     // Main menu bar
     if (ImGui::BeginMainMenuBar())
@@ -2958,4 +2963,218 @@ ImVec4 ModuleEditor::GetColorForFileType(const std::string& extension)
     }
 
     return ImVec4(0.7f, 0.7f, 0.7f, 1.0f); // Gray for unknown
+}
+
+// ===== SIMULATION CONTROL FUNCTIONS =====
+
+void ModuleEditor::DrawSimulationControls()
+{
+    auto& app = Application::GetInstance();
+    if (!app.moduleScene) return;
+
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImVec2 work_pos = viewport->WorkPos;
+    ImVec2 work_size = viewport->WorkSize;
+
+    // Toolbar window
+    ImGui::SetNextWindowPos(ImVec2(work_pos.x + work_size.x * 0.5f - 100, work_pos.y + 20), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(200, 50), ImGuiCond_Always);
+    
+    ImGuiWindowFlags toolbar_flags = ImGuiWindowFlags_NoDecoration | 
+                                     ImGuiWindowFlags_NoMove | 
+                                     ImGuiWindowFlags_NoSavedSettings |
+                                     ImGuiWindowFlags_NoFocusOnAppearing |
+                                     ImGuiWindowFlags_NoNav;
+
+    ImGui::Begin("SimulationControls", nullptr, toolbar_flags);
+
+    // Colores para los botones
+    ImVec4 playColor = ImVec4(0.2f, 0.7f, 0.2f, 1.0f);
+    ImVec4 pauseColor = ImVec4(0.8f, 0.6f, 0.2f, 1.0f);
+    ImVec4 stopColor = ImVec4(0.8f, 0.2f, 0.2f, 1.0f);
+
+    // Play button
+    bool isPlaying = (simulationState == SimulationState::PLAYING);
+    if (isPlaying)
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button, playColor);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.6f, 0.1f, 1.0f));
+    }
+
+    if (ImGui::Button("Play", ImVec2(60, 40)))
+    {
+        if (simulationState == SimulationState::STOPPED)
+        {
+            StartSimulation();
+        }
+        else if (simulationState == SimulationState::PAUSED)
+        {
+            simulationState = SimulationState::PLAYING;
+            PushEngineLog("Simulation resumed");
+        }
+    }
+
+    if (isPlaying)
+    {
+        ImGui::PopStyleColor(3);
+    }
+
+    ImGui::SameLine();
+
+    // Pause button
+    bool isPaused = (simulationState == SimulationState::PAUSED);
+    if (isPaused)
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button, pauseColor);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.7f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.5f, 0.1f, 1.0f));
+    }
+
+    if (ImGui::Button("Pause", ImVec2(60, 40)))
+    {
+        if (simulationState == SimulationState::PLAYING)
+        {
+            PauseSimulation();
+        }
+    }
+
+    if (isPaused)
+    {
+        ImGui::PopStyleColor(3);
+    }
+
+    ImGui::SameLine();
+
+    // Stop button  
+    bool isStopped = (simulationState == SimulationState::STOPPED);
+    if (!isStopped)
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button, stopColor);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));
+    }
+
+    if (ImGui::Button("Stop", ImVec2(60, 40)))
+    {
+        if (simulationState != SimulationState::STOPPED)
+        {
+            StopSimulation();
+        }
+    }
+
+    if (!isStopped)
+    {
+        ImGui::PopStyleColor(3);
+    }
+
+    ImGui::End();
+}
+
+void ModuleEditor::SaveSceneState()
+{
+    auto& app = Application::GetInstance();
+    if (!app.moduleScene) return;
+
+    // Guardar el estado actual de la escena en formato JSON
+    std::string tempPath = scenes_directory + "_temp_simulation_state.json";
+    
+    if (app.moduleScene->SaveScene(tempPath))
+    {
+        // Leer el archivo JSON guardado
+        std::ifstream file(tempPath);
+        if (file.is_open())
+        {
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            savedSceneStateJson = buffer.str();
+            file.close();
+            
+            // Eliminar el archivo temporal
+            std::filesystem::remove(tempPath);
+            
+            PushEngineLog("Scene state saved for simulation");
+        }
+        else
+        {
+            PushEngineLog("ERROR: Failed to read saved scene state");
+        }
+    }
+    else
+    {
+        PushEngineLog("ERROR: Failed to save scene state");
+    }
+}
+
+void ModuleEditor::RestoreSceneState()
+{
+    auto& app = Application::GetInstance();
+    if (!app.moduleScene || savedSceneStateJson.empty()) return;
+
+    // Escribir el JSON guardado a un archivo temporal
+    std::string tempPath = scenes_directory + "_temp_simulation_state.json";
+    
+    std::ofstream file(tempPath);
+    if (file.is_open())
+    {
+        file << savedSceneStateJson;
+        file.close();
+        
+        // Cargar la escena desde el archivo temporal
+        if (app.moduleScene->LoadScene(tempPath))
+        {
+            app.moduleScene->UpdateAllAABBs();
+            PushEngineLog("Scene state restored");
+        }
+        else
+        {
+            PushEngineLog("ERROR: Failed to restore scene state");
+        }
+        
+        // Eliminar el archivo temporal
+        std::filesystem::remove(tempPath);
+    }
+    else
+    {
+        PushEngineLog("ERROR: Failed to write temp scene file");
+    }
+    
+    savedSceneStateJson.clear();
+}
+
+void ModuleEditor::StartSimulation()
+{
+    if (simulationState != SimulationState::STOPPED) return;
+
+    // Guardar el estado actual de la escena
+    SaveSceneState();
+
+    // Cambiar al estado de reproducción
+    simulationState = SimulationState::PLAYING;
+    
+    PushEngineLog("========================================");
+    PushEngineLog("Simulation started");
+    PushEngineLog("========================================");
+}
+
+void ModuleEditor::PauseSimulation()
+{
+    if (simulationState != SimulationState::PLAYING) return;
+
+    simulationState = SimulationState::PAUSED;
+    PushEngineLog("Simulation paused");
+}
+
+void ModuleEditor::StopSimulation()
+{
+    if (simulationState == SimulationState::STOPPED) return;
+
+    // Restaurar el estado guardado de la escena
+    RestoreSceneState();
+
+    simulationState = SimulationState::STOPPED;
+    
+    PushEngineLog("========================================");
+    PushEngineLog("Simulation stopped - Scene restored");
+    PushEngineLog("========================================");
 }

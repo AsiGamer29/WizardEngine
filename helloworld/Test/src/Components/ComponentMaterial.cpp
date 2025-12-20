@@ -10,7 +10,14 @@ ComponentMaterial::ComponentMaterial(GameObject* owner)
 
 ComponentMaterial::~ComponentMaterial()
 {
-    CleanUp();
+    // NO llamar CleanUp() aquí - las texturas se gestionan por el sistema de caché
+    // o son compartidas (checkerboard). Liberar aquí causa crashes al restaurar escenas.
+    
+    // Solo limpiar override si lo poseemos
+    if (overrideTextureOwned && overrideTextureID != 0)
+    {
+        glDeleteTextures(1, &overrideTextureID);
+    }
 }
 
 void ComponentMaterial::LoadTexture(const char* path)
@@ -61,7 +68,8 @@ void ComponentMaterial::LoadTexture(const char* path)
 
 void ComponentMaterial::SetTexture(GLuint texID, const char* path, int texChannels)
 {
-    if (textureID != 0 && !texturePath.empty())
+    // Solo liberar si no es checkerboard
+    if (textureID != 0 && !texturePath.empty() && texturePath != "checkerboard_default")
     {
         Texture::ReleaseTexture(texturePath);
     }
@@ -95,6 +103,8 @@ void ComponentMaterial::SetOverrideTexture(GLuint texID, bool takeOwnership)
 
 void ComponentMaterial::ClearOverrideTexture()
 {
+    // Solo borrar la textura override si realmente la poseemos
+    // El inspector puede establecer override con texturas checkerboard que no debemos borrar
     if (overrideTextureOwned && overrideTextureID != 0)
     {
         glDeleteTextures(1, &overrideTextureID);
@@ -196,7 +206,9 @@ void ComponentMaterial::OnEditor()
 
 void ComponentMaterial::CleanUp()
 {
-    if (textureID != 0 && !texturePath.empty())
+    // Solo liberar texturas que NO sean checkerboard default
+    // El checkerboard es una textura compartida que no debe liberarse
+    if (textureID != 0 && !texturePath.empty() && texturePath != "checkerboard_default")
     {
         Texture::ReleaseTexture(texturePath);
         textureID = 0;

@@ -48,6 +48,15 @@ private:
     bool show_asset_browser = true;
     bool show_config_resources = false;
 
+    // Simulation control
+    enum class SimulationState
+    {
+        STOPPED,
+        PLAYING,
+        PAUSED
+    };
+    SimulationState simulationState = SimulationState::STOPPED;
+    std::string savedSceneStateJson;
 
     bool firstTimeLayout = true;
 
@@ -132,4 +141,12 @@ private:
     void DrawAssetGrid();
     const char* GetIconForFile(const std::string& extension);
     ImVec4 GetColorForFileType(const std::string& extension);
+
+    // Simulation control
+    void DrawSimulationControls();
+    void StartSimulation();
+    void PauseSimulation();
+    void StopSimulation();
+    void SaveSceneState();
+    void RestoreSceneState();
 };
