@@ -26,6 +26,7 @@
 
 ModuleScene::ModuleScene()
     : root(nullptr), selectedGameObject(nullptr)
+    , useOctree(true), octreeNeedsRebuild(false)
 {
     name = "ModuleScene";
 }
@@ -61,6 +62,11 @@ bool ModuleScene::Start()
         return false;
     }
 
+    // Inicializar Octree
+    AABB initialBounds(glm::vec3(-1000.0f), glm::vec3(1000.0f));
+    octree = std::make_unique<Octree>(initialBounds, 8, 8);
+    std::cout << "[ModuleScene] Octree initialized" << std::endl;
+
     return true;
 }
 
@@ -71,6 +77,13 @@ bool ModuleScene::PreUpdate()
 
 bool ModuleScene::Update()
 {
+    // Reconstruir octree si es necesario
+    if (useOctree && octreeNeedsRebuild && octree)
+    {
+        RebuildOctree();
+        octreeNeedsRebuild = false;
+    }
+
     // Actualizar todos los GameObjects
     if (root)
     {
@@ -132,6 +145,13 @@ GameObject* ModuleScene::CreateGameObject(const char* name, GameObject* parent)
     }
 
     allGameObjects.push_back(go);
+    
+    // Marcar octree para rebuild
+    if (octree)
+    {
+        octreeNeedsRebuild = true;
+    }
+    
     return go;
 }
 
@@ -175,6 +195,12 @@ void ModuleScene::DestroyGameObject(GameObject* gameObject)
 
     // FINALMENTE: Eliminar el objeto
     delete gameObject;
+
+    // Marcar octree para rebuild
+    if (octree)
+    {
+        octreeNeedsRebuild = true;
+    }
 
     std::cout << "[ModuleScene] GameObject destroyed successfully" << std::endl;
 }
@@ -382,14 +408,46 @@ void ModuleScene::UpdateAllAABBs()
             go->UpdateAABB();
         }
     }
+    
+    // Marcar octree para rebuild después de actualizar AABBs
+    if (octree)
+    {
+        octreeNeedsRebuild = true;
+    }
 }
 
 GameObject* ModuleScene::PerformRaycast(const Ray& ray)
 {
     std::vector<RayHit> candidates;
 
-    if (root)
-        CollectRaycastCandidates(root, ray, candidates);
+    if (useOctree && octree)
+    {
+        // Usar Octree para query optimizada
+        std::vector<GameObject*> potentialHits;
+        octree->QueryRay(ray, potentialHits);
+
+        // Solo comprobar intersecciones precisas con los candidatos
+        for (GameObject* obj : potentialHits)
+        {
+            if (obj && obj->IsActive() && obj->HasAABB())
+            {
+                RayHit hit;
+                if (obj->IntersectRay(ray, hit))
+                {
+                    candidates.push_back(hit);
+                }
+            }
+        }
+
+        std::cout << "[ModuleScene] Raycast: Octree found " << potentialHits.size() 
+                  << " candidates, " << candidates.size() << " hits" << std::endl;
+    }
+    else
+    {
+        // Fallback: búsqueda lineal tradicional
+        if (root)
+            CollectRaycastCandidates(root, ray, candidates);
+    }
 
     if (candidates.empty())
         return nullptr;
@@ -1071,4 +1129,30 @@ GameObject* ModuleScene::LoadModelFromAssetPath(const std::string& assetPath)
         << " meshes loaded\n==================================================" << std::endl;
 
     return modelRoot;
+}
+
+void ModuleScene::RebuildOctree()
+{
+    if (!octree)
+    {
+        AABB initialBounds(glm::vec3(-1000.0f), glm::vec3(1000.0f));
+        octree = std::make_unique<Octree>(initialBounds, 8, 8);
+    }
+
+    std::cout << "[ModuleScene] Rebuilding Octree with " << allGameObjects.size() << " objects..." << std::endl;
+
+    // Filtrar solo objetos con AABB válido
+    std::vector<GameObject*> validObjects;
+    for (GameObject* obj : allGameObjects)
+    {
+        if (obj && obj->IsActive() && obj->HasAABB())
+        {
+            validObjects.push_back(obj);
+        }
+    }
+
+    octree->Build(validObjects);
+    
+    std::cout << "[ModuleScene] Octree rebuilt: " << octree->GetTotalObjects() 
+              << " objects indexed" << std::endl;
 }

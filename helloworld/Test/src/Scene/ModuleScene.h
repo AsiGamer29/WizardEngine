@@ -2,8 +2,10 @@
 #include "Module.h"
 #include "AssetManager.h"
 #include "Ray.h"
+#include "Octree.h"
 #include <vector>
 #include <string>
+#include <memory>
 
 class GameObject;
 struct aiScene;
@@ -12,12 +14,18 @@ struct aiNode;
 class ModuleScene : public Module
 {
 private:
-    GameObject* root;
-    GameObject* selectedGameObject; // Para el inspector
-    std::vector<GameObject*> allGameObjects; // Todos los GOs para facilitar búsqueda
+GameObject* root;
+GameObject* selectedGameObject; // Para el inspector
+std::vector<GameObject*> allGameObjects; // Todos los GOs para facilitar búsqueda
 
-    // Debug visualization flags
-    bool debugShowNormals = false;
+// Octree spatial acceleration structure
+std::unique_ptr<Octree> octree;
+bool useOctree;
+bool octreeNeedsRebuild;
+
+// Debug visualization flags
+bool debugShowNormals = false;
+bool debugShowOctree = false;
 
 public:
     ModuleScene();
@@ -50,6 +58,15 @@ public:
     // Debug flags for editor
     void SetDebugShowNormals(bool v) { debugShowNormals = v; }
     bool GetDebugShowNormals() const { return debugShowNormals; }
+    void SetDebugShowOctree(bool v) { debugShowOctree = v; }
+    bool GetDebugShowOctree() const { return debugShowOctree; }
+
+    // Octree management
+    void RebuildOctree();
+    void SetUseOctree(bool use) { useOctree = use; }
+    bool IsUsingOctree() const { return useOctree; }
+    const Octree* GetOctree() const { return octree.get(); }
+    void MarkOctreeForRebuild() { octreeNeedsRebuild = true; }
 
     GameObject* PerformRaycast(const Ray& ray);
     void UpdateAllAABBs();
