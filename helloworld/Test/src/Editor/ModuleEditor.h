@@ -78,6 +78,7 @@ private:
     void LoadMeshFromWZM(const std::string& wzmPath);
     std::string GetFileExtension(const std::string& filepath);
     void LoadModelFromAssetBrowser(const std::string& libraryPath, WizardEngine::AssetMetaData* metaData, const std::string& originalAssetPath);
+    void DeleteAsset(const std::string& assetPath);
 
     bool inspector_show_checkerboard = false;
     unsigned int inspectorCheckerTex = 0;
@@ -139,6 +140,7 @@ private:
     void DrawAssetBrowser();
     void DrawFolderTree(const std::filesystem::path& path, const std::filesystem::path& currentPath);
     void DrawAssetGrid();
+    void DrawAssetImportSettings(const std::string& assetPath);
     const char* GetIconForFile(const std::string& extension);
     ImVec4 GetColorForFileType(const std::string& extension);
 

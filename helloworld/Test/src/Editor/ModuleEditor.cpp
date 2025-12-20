@@ -1152,9 +1152,14 @@ bool ModuleEditor::Update()
         if (ImGui::Begin("Inspector", &show_inspector_window))
         {
             auto& app = Application::GetInstance();
+
+            // ==== MODO 1: Si hay un GameObject seleccionado ====
             GameObject* selected = nullptr;
             if (app.moduleScene)
                 selected = app.moduleScene->GetSelectedGameObject();
+
+            // ==== MODO 2: Si hay un Asset seleccionado en el Asset Browser ====
+            bool showingAsset = !selectedAssetPath.empty() && !selected;
 
             if ((void*)selected != inspectorOverrideTarget && inspectorOverrideTarget != nullptr)
             {
@@ -1171,9 +1176,14 @@ bool ModuleEditor::Update()
                 inspector_show_checkerboard = false;
             }
 
-            if (!selected)
+            if (showingAsset)
             {
-                ImGui::TextDisabled("No GameObject selected");
+                // ===== MOSTRAR IMPORT SETTINGS DEL ASSET =====
+                DrawAssetImportSettings(selectedAssetPath);
+            }
+            else if (!selected)
+            {
+                ImGui::TextDisabled("No GameObject or Asset selected");
             }
             else
             {
@@ -2707,6 +2717,20 @@ void ModuleEditor::DrawAssetGrid()
             ImGui::EndDragDropSource();
         }
 
+        // ===== RIGHT CLICK CONTEXT MENU =====
+        if (ImGui::BeginPopupContextItem())
+        {
+            ImGui::Text("Asset: %s", filename.c_str());
+            ImGui::Separator();
+
+            if (ImGui::MenuItem("Delete"))
+            {
+                DeleteAsset(filepath);
+            }
+
+            ImGui::EndPopup();
+        }
+
         // ===== DOUBLE CLICK - FIXED =====
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
         {
@@ -2830,6 +2854,197 @@ void ModuleEditor::DrawFolderTree(const std::filesystem::path& path, const std::
             }
         }
         ImGui::TreePop();
+    }
+}
+
+void ModuleEditor::DrawAssetImportSettings(const std::string& assetPath)
+{
+    auto& app = Application::GetInstance();
+
+    std::string filename = std::filesystem::path(assetPath).filename().string();
+    std::string ext = GetFileExtension(assetPath);
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+    ImGui::Text("Asset Inspector");
+    ImGui::Separator();
+    
+    ImGui::Text("File: %s", filename.c_str());
+    ImGui::Text("Type: %s", ext.c_str());
+    ImGui::Spacing();
+
+    // Obtener o crear metadata
+    std::string normalizedPath = assetPath;
+    std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
+
+    WizardEngine::AssetManager* assetMgr = app.GetAssetManager();
+    if (!assetMgr) return;
+
+    WizardEngine::AssetMetaData* metaData = assetMgr->GetMetaData(normalizedPath);
+    bool hasMetaData = (metaData != nullptr);
+
+    // Si no hay metadata, crear una temporal
+    WizardEngine::AssetMetaData tempMeta;
+    if (!hasMetaData)
+    {
+        metaData = &tempMeta;
+        metaData->sourceFile = normalizedPath;
+        metaData->uuid = WizardEngine::MetaFile::GenerateUUID();
+        metaData->assetType = "unknown";
+
+        // Determinar tipo según extensión
+        if (ext == "fbx" || ext == "obj" || ext == "gltf" || ext == "glb" || ext == "dae")
+            metaData->assetType = "model";
+        else if (ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "bmp" || ext == "tga")
+            metaData->assetType = "texture";
+    }
+
+    // ===== MODEL IMPORT SETTINGS =====
+    if (metaData->assetType == "model")
+    {
+        if (ImGui::CollapsingHeader("Model Import Settings", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Text("Transform");
+            ImGui::Separator();
+
+            float scale[3] = { metaData->importScale.x, metaData->importScale.y, metaData->importScale.z };
+            if (ImGui::DragFloat3("Import Scale", scale, 0.01f, 0.001f, 100.0f))
+            {
+                metaData->importScale = glm::vec3(scale[0], scale[1], scale[2]);
+            }
+
+            float rotation[3] = { metaData->importRotation.x, metaData->importRotation.y, metaData->importRotation.z };
+            if (ImGui::DragFloat3("Import Rotation (deg)", rotation, 1.0f, -360.0f, 360.0f))
+            {
+                metaData->importRotation = glm::vec3(rotation[0], rotation[1], rotation[2]);
+            }
+
+            ImGui::Spacing();
+            ImGui::Text("Options");
+            ImGui::Separator();
+
+            ImGui::Checkbox("Generate Colliders", &metaData->generateColliders);
+            ImGui::Checkbox("Optimize Mesh", &metaData->optimizeMesh);
+            ImGui::Checkbox("Flip UVs", &metaData->flipUVs);
+
+            ImGui::Spacing();
+
+            if (ImGui::Button("Save Import Settings", ImVec2(-1, 0)))
+            {
+                std::string metaPath = WizardEngine::MetaFile::GetMetaPath(normalizedPath);
+                if (WizardEngine::MetaFile::Save(metaPath, *metaData))
+                {
+                    PushEngineLog("Import settings saved");
+                }
+                else
+                {
+                    PushEngineLog("ERROR: Failed to save import settings");
+                }
+            }
+
+            if (ImGui::Button("Reimport", ImVec2(-1, 0)))
+            {
+                PushEngineLog("Reimporting asset...");
+                
+                if (app.moduleResources)
+                {
+                    // Forzar reimportado
+                    uint64_t uid = app.moduleResources->Find(normalizedPath);
+                    if (uid != 0)
+                    {
+                        // Descargar el recurso actual
+                        app.moduleResources->ReleaseResource(uid);
+                    }
+
+                    // Guardar metadata antes de reimportar
+                    std::string metaPath = WizardEngine::MetaFile::GetMetaPath(normalizedPath);
+                    WizardEngine::MetaFile::Save(metaPath, *metaData);
+
+                    // Reimportar
+                    if (assetMgr->ProcessAssetFile(normalizedPath))
+                    {
+                        PushEngineLog("Asset reimported successfully");
+                        app.moduleResources->ScanAssetsFolder();
+                    }
+                    else
+                    {
+                        PushEngineLog("ERROR: Failed to reimport asset");
+                    }
+                }
+            }
+        }
+    }
+    // ===== TEXTURE IMPORT SETTINGS =====
+    else if (metaData->assetType == "texture")
+    {
+        if (ImGui::CollapsingHeader("Texture Import Settings", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Text("Options");
+            ImGui::Separator();
+
+            ImGui::Checkbox("Flip UVs Vertically", &metaData->flipUVs);
+            
+            // Nota: Filtering y wrapping se podrían añadir aquí
+            // Por ahora solo tenemos flip como opción básica
+
+            ImGui::Spacing();
+
+            if (ImGui::Button("Save Import Settings", ImVec2(-1, 0)))
+            {
+                std::string metaPath = WizardEngine::MetaFile::GetMetaPath(normalizedPath);
+                if (WizardEngine::MetaFile::Save(metaPath, *metaData))
+                {
+                    PushEngineLog("Import settings saved");
+                }
+                else
+                {
+                    PushEngineLog("ERROR: Failed to save import settings");
+                }
+            }
+
+            if (ImGui::Button("Reimport", ImVec2(-1, 0)))
+            {
+                PushEngineLog("Reimporting texture...");
+                
+                if (app.moduleResources)
+                {
+                    // Guardar metadata
+                    std::string metaPath = WizardEngine::MetaFile::GetMetaPath(normalizedPath);
+                    WizardEngine::MetaFile::Save(metaPath, *metaData);
+
+                    // Reimportar
+                    if (assetMgr->ProcessAssetFile(normalizedPath))
+                    {
+                        PushEngineLog("Texture reimported successfully");
+                        app.moduleResources->ScanAssetsFolder();
+                    }
+                    else
+                    {
+                        PushEngineLog("ERROR: Failed to reimport texture");
+                    }
+                }
+            }
+        }
+    }
+    else
+    {
+        ImGui::TextDisabled("No import settings available for this file type");
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Info adicional
+    if (ImGui::CollapsingHeader("Asset Info"))
+    {
+        ImGui::Text("UUID: %s", metaData->uuid.c_str());
+        ImGui::Text("Library File: %s", metaData->libraryFile.empty() ? "(not imported)" : metaData->libraryFile.c_str());
+        
+        if (std::filesystem::exists(normalizedPath))
+        {
+            auto fileSize = std::filesystem::file_size(normalizedPath);
+            ImGui::Text("File Size: %llu bytes", fileSize);
+        }
     }
 }
 
@@ -3181,4 +3396,72 @@ void ModuleEditor::StopSimulation()
     PushEngineLog("========================================");
     PushEngineLog("Simulation stopped - Scene restored");
     PushEngineLog("========================================");
+}
+
+void ModuleEditor::DeleteAsset(const std::string& assetPath)
+{
+    auto& app = Application::GetInstance();
+
+    PushEnginePrintf("Deleting asset: %s", assetPath.c_str());
+
+    // Normalizar path
+    std::string normalizedPath = assetPath;
+    std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
+
+    try {
+        // 1. Obtener metadata para encontrar archivos de Library
+        std::string metaPath = WizardEngine::MetaFile::GetMetaPath(normalizedPath);
+        
+        if (std::filesystem::exists(metaPath))
+        {
+            WizardEngine::AssetMetaData metaData;
+            if (WizardEngine::MetaFile::Load(metaPath, metaData))
+            {
+                // 2. Borrar archivo de Library si existe
+                if (!metaData.libraryFile.empty() && std::filesystem::exists(metaData.libraryFile))
+                {
+                    std::filesystem::path libraryPath(metaData.libraryFile);
+                    
+                    // Si es un modelo (.wzd), borrar toda la carpeta del modelo
+                    if (libraryPath.extension() == ".wzd")
+                    {
+                        std::filesystem::path modelDir = libraryPath.parent_path();
+                        if (std::filesystem::exists(modelDir))
+                        {
+                            std::filesystem::remove_all(modelDir);
+                            PushEnginePrintf("Deleted model directory: %s", modelDir.string().c_str());
+                        }
+                    }
+                    else
+                    {
+                        // Borrar archivo individual (textura, mesh, etc.)
+                        std::filesystem::remove(metaData.libraryFile);
+                        PushEnginePrintf("Deleted library file: %s", metaData.libraryFile.c_str());
+                    }
+                }
+            }
+
+            // 3. Borrar archivo .meta
+            std::filesystem::remove(metaPath);
+            PushEnginePrintf("Deleted meta file: %s", metaPath.c_str());
+        }
+
+        // 4. Borrar archivo de asset original
+        if (std::filesystem::exists(normalizedPath))
+        {
+            std::filesystem::remove(normalizedPath);
+            PushEnginePrintf("Deleted asset file: %s", normalizedPath.c_str());
+        }
+
+        // 5. Actualizar ModuleResources
+        if (app.moduleResources)
+        {
+            app.moduleResources->ScanAssetsFolder();
+        }
+
+        PushEngineLog("Asset deleted successfully");
+    }
+    catch (const std::exception& e) {
+        PushEnginePrintf("ERROR deleting asset: %s", e.what());
+    }
 }
