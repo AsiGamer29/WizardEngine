@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include "Ray.h"
+#include "Frustum.h"
 
 
 class Camera
@@ -18,6 +19,9 @@ public:
 
     void setProjection(float fov, float aspect, float nearP, float farP);
     Ray ScreenPointToRay(float mouseX, float mouseY, int screenWidth, int screenHeight);
+
+    const Frustum& GetFrustum() const { return frustum; }
+    void UpdateFrustum() { frustum.Update(getProjectionMatrix() * getViewMatrix()); }
 
     void updateCameraVectors();
     void processKeyboard(Input* input, float deltaTime);
@@ -52,4 +56,6 @@ private:
     bool orbitMode = false;
     glm::vec3 orbitTarget;
     float orbitDistance = 5.0f;
+
+    Frustum frustum;
 };

@@ -6,7 +6,9 @@
 #include <set>
 #include <iostream>
 #include <glm/glm.hpp>
-#include "AABB.h" 
+#include "AABB.h"
+#include "Frustum.h"
+#include "DebugRenderer.h"
 
 class Model;
 class MeshGeometry;
@@ -69,10 +71,15 @@ public:
     // Variables públicas para debug
     bool showAABBs = false;
     bool showGrid = true;
+    bool enableFrustumCulling = true;
 
     // Getters para el editor
     bool IsGridVisible() const { return showGrid; }
     void SetGridVisible(bool visible) { showGrid = visible; }
+    
+    bool IsFrustumCullingEnabled() const { return enableFrustumCulling; }
+    void SetFrustumCullingEnabled(bool enabled) { enableFrustumCulling = enabled; }
+    
     Shader* gridShader;
     glm::vec3 gridColor = glm::vec3(0.5f, 0.5f, 0.5f);
 

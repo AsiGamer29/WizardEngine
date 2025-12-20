@@ -26,6 +26,7 @@
 #include "MetaFile.h"
 #include "Resource.h"
 #include "ModuleResources.h"
+#include "DebugRenderer.h"
 
 
 #define GLM_ENABLE_EXPERIMENTAL
@@ -804,6 +805,15 @@ bool ModuleEditor::Update()
         {
             auto& app = Application::GetInstance();
 
+            if (ImGui::MenuItem("Enable Frustum Culling", NULL, app.opengl ? app.opengl->enableFrustumCulling : false))
+            {
+                if (app.opengl)
+                {
+                    app.opengl->enableFrustumCulling = !app.opengl->enableFrustumCulling;
+                    PushEnginePrintf("Frustum Culling: %s", app.opengl->enableFrustumCulling ? "ON" : "OFF");
+                }
+            }
+
             if (ImGui::MenuItem("Show AABBs", NULL, app.opengl ? app.opengl->showAABBs : false))
             {
                 if (app.opengl)
@@ -811,6 +821,12 @@ bool ModuleEditor::Update()
                     app.opengl->showAABBs = !app.opengl->showAABBs;
                     PushEnginePrintf("AABB visualization: %s", app.opengl->showAABBs ? "ON" : "OFF");
                 }
+            }
+
+            if (ImGui::MenuItem("Show Debug Lines", NULL, DebugRenderer::Get().IsEnabled()))
+            {
+                DebugRenderer::Get().SetEnabled(!DebugRenderer::Get().IsEnabled());
+                PushEnginePrintf("Debug Lines: %s", DebugRenderer::Get().IsEnabled() ? "ON" : "OFF");
             }
 
             if (ImGui::MenuItem("Show Grid", NULL, app.opengl->showGrid))
