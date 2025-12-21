@@ -28,6 +28,7 @@ public:
     void processMouseMovement(float xoffset, float yoffset, bool constrainPitch = true);
     void processMouseScroll(float yoffset);
 	void processOrbitMovement(float xoffset, float yoffset);
+    void FocusOnPoint(const glm::vec3& target, float distance = 5.0f);
 
 private:
     glm::vec3 position;

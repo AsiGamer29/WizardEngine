@@ -168,23 +168,44 @@ void Camera::processOrbitMovement(float xoffset, float yoffset)
     xoffset *= -mouseSensitivity;
     yoffset *= -mouseSensitivity;
 
-
     yaw += xoffset;
     pitch += yoffset;
 
     if (pitch > 89.0f) pitch = 89.0f;
     if (pitch < -89.0f) pitch = -89.0f;
 
+    // Calcular posición en coordenadas esféricas
+    float radYaw = glm::radians(yaw);
+    float radPitch = glm::radians(pitch);
 
-    glm::vec3 direction;
-    direction.x = cos(glm::radians(pitch)) * cos(glm::radians(yaw));
-    direction.y = sin(glm::radians(pitch));
-    direction.z = cos(glm::radians(pitch)) * sin(glm::radians(yaw));
+    glm::vec3 offset;
+    offset.x = cos(radPitch) * cos(radYaw);
+    offset.y = sin(radPitch);
+    offset.z = cos(radPitch) * sin(radYaw);
 
-    position = orbitTarget - glm::normalize(direction) * orbitDistance;
+    offset = glm::normalize(offset);
+    position = orbitTarget - offset * orbitDistance;
 
-    front = glm::normalize(orbitTarget - position);
+    // Actualizar vectores correctamente
+    updateCameraVectors();
+}
+void Camera::FocusOnPoint(const glm::vec3& target, float distance)
+{
+    orbitTarget = target;
+    orbitDistance = distance;
 
+    // Calcular dirección desde target a cámara
+    glm::vec3 direction = glm::normalize(position - target);
+
+    // Posicionar cámara a la distancia especificada
+    position = target + direction * distance;
+
+    // Actualizar orientación para mirar al target
+    front = glm::normalize(target - position);
     right = glm::normalize(glm::cross(front, worldUp));
     up = glm::normalize(glm::cross(right, front));
+
+    // Actualizar yaw y pitch
+    pitch = glm::degrees(asin(front.y));
+    yaw = glm::degrees(atan2(front.z, front.x));
 }

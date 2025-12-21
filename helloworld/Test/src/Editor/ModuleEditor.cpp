@@ -10,12 +10,7 @@
 #include "ImGuizmo.h"
 #include "ComponentTransform.h"
 #include <glm/gtc/type_ptr.hpp>
-
 #include <filesystem>
-#include <map>
-#include <fstream>
-#include <sstream>
-
 #include "GeometryGenerator.h"
 #include "GameObject.h"
 #include "ComponentMesh.h"
@@ -30,7 +25,6 @@
 #include "Resource.h"
 #include "ModuleResources.h"
 #include "DebugRenderer.h"
-
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
@@ -596,7 +590,25 @@ bool ModuleEditor::Update()
     {
         NewScene();
     }
+    if (ImGui::IsKeyPressed(ImGuiKey_F, false))
+    {
+        auto& app = Application::GetInstance();
+        if (app.moduleScene && app.camera)
+        {
+            GameObject* selected = app.moduleScene->GetSelectedGameObject();
+            if (selected && selected->HasAABB())
+            {
+                AABB aabb = selected->GetAABB();
+                glm::vec3 center = aabb.GetCenter();
+                glm::vec3 size = aabb.GetSize();
+                float maxDim = glm::max(glm::max(size.x, size.y), size.z);
+                float distance = maxDim * 2.5f; // Distance based on object size
 
+                app.camera->FocusOnPoint(center, distance);
+                PushEngineLog("Focused camera on selected object");
+            }
+        }
+    }
     if (ImGui::IsKeyPressed(ImGuiKey_Delete, false))
     {
         auto& app = Application::GetInstance();
