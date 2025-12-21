@@ -20,9 +20,9 @@ We have also aded a dynamic camera that you can move at will pressing right clic
 
 You can also orbit around the mouse pressing the alt key and clicking your left mouse key and dragging your mouse around.
 
-We implemented that after pressing the F key you can now center the camera on the selected gameObject.
+We implemented that after pressing the F key you can now center the camera on the selected GameObject.
 
-We implemented that you can create a camera as a gameObject too, so you are not rooted to use de default one, you can move it as freely as you want, and when you press play the camera you've created becomes your POV.
+We implemented that you can create a camera as a GameObject too, so you are not rooted to use de default one, you can move it as freely as you want, and when you press play the camera you've created becomes your POV.
 
 We now also have frustrum culling and octree implemented in to our camera.
 
@@ -33,7 +33,7 @@ We implemented the Imguizmo library, it let's us transform and modify our gameob
 
 By interacting with the UI, you can create GameObjects using different shapes, such as spheres, pyramids, cubes, and more!
 
-Now you can reparent and move the gameopjects from the hierarchy. You also can create empty game objects.
+Now you can reparent and move the GameObjects from the hierarchy. You also can create empty game objects.
 
 You can change the transparency of the textures and rotate the UVs from the editor.
 
@@ -44,15 +44,15 @@ Selecting GameObjects in the Hierarchy window lets you modify values such as tex
 Now we have 3 buttons up in the viewport, that let's us play pause and stop the scene.
 
 ### Resource Manager ###
-We have files with unique format(.wzd). They change depending on the source(if its a texture.wzt, if its a model .wzm etc...).
+We have files with unique format(.wzd). They change depending on the source (if it's a texture it's .wzt, if it's a model it's .wzm etc...).
 
-We have also added .meta files, which can be dragged and dropped in to the scene using the asset manager.
+We have also added .meta files, which can be dragged and dropped into the scene using the asset manager.
 
 You can also save and load scenes into the engine.
 
 ### Extra Features ###
-You can also duplicate and remove gameobject by right-clicking the gameobject.
+You can also duplicate and remove GameObjects by right-clicking the selected GameObject.
 
-We have keyboard shortcuts too: If you press crtl+S you save the current scene, If you press crtl+D you duplicate the scene, and if you press Supr you delete the current selected gameobject.
+We have keyboard shortcuts too: If you press Ctrl+S you save the current scene, If you press Ctrl+D you duplicate the scene, and if you press Supr you delete the current selected GameObject.
 
 
