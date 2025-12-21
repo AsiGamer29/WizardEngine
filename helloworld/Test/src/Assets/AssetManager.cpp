@@ -68,7 +68,8 @@ namespace WizardEngine {
         // Check if needs reimport
         uint64_t currentTimestamp = GetFileTimestamp(filepath);
         bool needsImport = (currentTimestamp != metaData.sourceTimestamp) ||
-            (metaData.lastImportTimestamp == 0);
+            (metaData.lastImportTimestamp == 0) ||
+            (metaData.libraryFile.empty()); // CRITICAL FIX: Also reimport if libraryFile is missing
 
         if (!needsImport) {
             // Silently cache and skip
@@ -78,9 +79,17 @@ namespace WizardEngine {
 
         std::cout << "[AssetManager] Processing: " << filepath << std::endl;
 
-        // Determine asset type and process
+        // CRITICAL FIX: Pre-generate library paths based on asset type
+        std::string libraryPath;
+
+        // Determine asset type and generate library path
         if (ext == "fbx" || ext == "obj" || ext == "gltf" || ext == "glb" || ext == "dae") {
             metaData.assetType = "model";
+            std::string outputDir = libraryDir + "Models/" +
+                std::filesystem::path(filepath).stem().string();
+            libraryPath = outputDir + "/model.wzd";
+            metaData.libraryFile = libraryPath; // Set BEFORE processing
+
             if (!ProcessModelFile(filepath)) {
                 return false;
             }
@@ -88,6 +97,10 @@ namespace WizardEngine {
         else if (ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "bmp" ||
             ext == "tga" || ext == "dds") {
             metaData.assetType = "texture";
+            std::string filename = std::filesystem::path(filepath).stem().string() + ".wzt";
+            libraryPath = libraryDir + "Textures/" + filename;
+            metaData.libraryFile = libraryPath; // Set BEFORE processing
+
             if (!ProcessTextureFile(filepath)) {
                 return false;
             }
@@ -97,15 +110,34 @@ namespace WizardEngine {
             return false;
         }
 
+        // CRITICAL FIX: Verify libraryFile is set and file exists
+        if (metaData.libraryFile.empty()) {
+            std::cerr << "[AssetManager] ERROR: libraryFile is EMPTY after processing!" << std::endl;
+            std::cerr << "[AssetManager] Asset type: " << metaData.assetType << std::endl;
+            std::cerr << "[AssetManager] Source: " << filepath << std::endl;
+            return false;
+        }
+
+        if (!std::filesystem::exists(metaData.libraryFile)) {
+            std::cerr << "[AssetManager] ERROR: Library file was not created: " << metaData.libraryFile << std::endl;
+            return false;
+        }
+
         // Update meta timestamps
         metaData.sourceTimestamp = currentTimestamp;
         metaData.lastImportTimestamp = GetFileTimestamp(filepath);
 
         // Save meta file
-        MetaFile::Save(metaPath, metaData);
+        if (!MetaFile::Save(metaPath, metaData)) {
+            std::cerr << "[AssetManager] ERROR: Failed to save meta file!" << std::endl;
+            return false;
+        }
 
-        // Cache it
+        // Update cache with final metadata
         metaCache[filepath] = metaData;
+
+        std::cout << "[AssetManager] Successfully processed: " << filepath << std::endl;
+        std::cout << "[AssetManager] Library file: " << metaData.libraryFile << std::endl;
 
         return true;
     }
@@ -126,11 +158,19 @@ namespace WizardEngine {
         }
 
         std::string wzdPath = outputDir + "/model.wzd";
-        ModelImporter::Save(modelData, wzdPath);
 
-        // Update meta with library path
-        AssetMetaData& metaData = metaCache[filepath];
-        metaData.libraryFile = wzdPath;
+        if (!ModelImporter::Save(modelData, wzdPath)) {
+            std::cerr << "[AssetManager] Failed to save WZD file: " << wzdPath << std::endl;
+            return false;
+        }
+
+        // Verify the file was actually created
+        if (!std::filesystem::exists(wzdPath)) {
+            std::cerr << "[AssetManager] ERROR: WZD file not found after save: " << wzdPath << std::endl;
+            return false;
+        }
+
+        std::cout << "[AssetManager] Model saved to: " << wzdPath << std::endl;
 
         auto endTotal = std::chrono::high_resolution_clock::now();
         double totalTime = std::chrono::duration<double>(endTotal - startTotal).count();
@@ -178,12 +218,21 @@ namespace WizardEngine {
         std::string wztPath = libraryDir + "Textures/" + filename;
 
         auto startSave = std::chrono::high_resolution_clock::now();
-        TextureImporter::Save(texData, wztPath);
+
+        if (!TextureImporter::Save(texData, wztPath)) {
+            std::cerr << "[AssetManager] Failed to save WZT file: " << wztPath << std::endl;
+            return false;
+        }
+
         auto endSave = std::chrono::high_resolution_clock::now();
 
-        // Update meta with library path
-        AssetMetaData& metaData = metaCache[filepath];
-        metaData.libraryFile = wztPath;
+        // Verify the file was actually created
+        if (!std::filesystem::exists(wztPath)) {
+            std::cerr << "[AssetManager] ERROR: WZT file not found after save: " << wztPath << std::endl;
+            return false;
+        }
+
+        std::cout << "[AssetManager] Texture saved to: " << wztPath << std::endl;
 
         WizardTextureData loadTest;
         auto startLoad = std::chrono::high_resolution_clock::now();
