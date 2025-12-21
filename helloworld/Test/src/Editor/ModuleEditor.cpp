@@ -947,80 +947,249 @@ bool ModuleEditor::Update()
 
                     PushEnginePrintf("=== ASSET DROPPED: %s ===", assetPath.c_str());
 
-                    // Load model if it's a model file
+                    // Normalizar path
+                    std::string normalizedPath = assetPath;
+                    std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
+
+                    // ============================================================
+                    // MODELO (FBX, OBJ, GLTF, etc.)
+                    // ============================================================
                     if (ext == "fbx" || ext == "obj" || ext == "gltf" ||
                         ext == "glb" || ext == "dae")
                     {
-                        PushEngineLog("Detected model file, loading to scene with import settings...");
+                        PushEngineLog("Loading model...");
 
-                        // Normalizar path
-                        std::string normalizedPath = assetPath;
-                        std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
+                        bool success = false;
 
-                        if (app.moduleResources)
+                        // 1. Verificar si ya está importado
+                        std::string metaPath = WizardEngine::MetaFile::GetMetaPath(normalizedPath);
+                        bool needsImport = !std::filesystem::exists(metaPath);
+
+                        // 2. Si no existe meta, importar
+                        if (needsImport)
                         {
-                            // Buscar o importar el asset
-                            uint64_t uid = app.moduleResources->Find(normalizedPath);
+                            PushEngineLog("Model not imported, importing now...");
 
-                            if (uid == 0) {
-                                PushEngineLog("Asset not imported yet, importing...");
-                                uid = app.moduleResources->ImportFile(normalizedPath);
-                            }
-
-                            if (uid != 0)
+                            if (app.moduleResources)
                             {
-                                auto info = app.moduleResources->GetResourceInfo(uid);
-
-                                if (!info.libraryPath.empty() && std::filesystem::exists(info.libraryPath))
+                                uint64_t uid = app.moduleResources->ImportFile(normalizedPath);
+                                if (uid != 0)
                                 {
-                                    WizardEngine::AssetManager* assetMgr = app.GetAssetManager();
-                                    WizardEngine::AssetMetaData* metaData = nullptr;
-
-                                    if (assetMgr) {
-                                        metaData = assetMgr->GetMetaData(normalizedPath);
-                                    }
-
-                                    // Cargar con import settings
-                                    LoadModelFromAssetBrowser(info.libraryPath, metaData, normalizedPath);
+                                    PushEnginePrintf("Model imported with UID: %llu", uid);
+                                    success = true;
                                 }
                                 else
                                 {
-                                    PushEnginePrintf("ERROR: Library file not found: %s", info.libraryPath.c_str());
+                                    PushEngineLog("ERROR: Import failed - check console for details");
                                 }
                             }
                             else
                             {
-                                PushEngineLog("ERROR: Failed to import asset");
+                                PushEngineLog("ERROR: ModuleResources not available");
                             }
                         }
                         else
                         {
-                            PushEngineLog("ERROR: ModuleResources not available");
+                            success = true;
                         }
-                    }
-                    // Handle texture drops
-                    else if (ext == "png" || ext == "jpg" || ext == "jpeg" ||
-                        ext == "bmp" || ext == "tga")
-                    {
-                        if (app.moduleScene)
+
+                        // 3. Si el import fue exitoso, cargar el modelo
+                        if (success)
                         {
-                            GameObject* selected = app.moduleScene->GetSelectedGameObject();
-                            if (selected)
+                            // Cargar metadata
+                            WizardEngine::AssetMetaData metaData;
+                            if (WizardEngine::MetaFile::Load(metaPath, metaData))
                             {
-                                ComponentMaterial* mat = selected->GetComponent<ComponentMaterial>();
-                                if (mat)
+                                // Verificar que libraryFile existe
+                                if (metaData.libraryFile.empty())
                                 {
-                                    mat->LoadTexture(assetPath.c_str());
-                                    PushEnginePrintf("Texture applied to: %s", selected->GetName());
+                                    PushEngineLog("ERROR: libraryFile is empty in .meta");
+                                    PushEngineLog("Trying to reimport...");
+
+                                    if (app.moduleResources)
+                                    {
+                                        uint64_t uid = app.moduleResources->ImportFile(normalizedPath);
+                                        if (uid != 0)
+                                        {
+                                            // Recargar metadata
+                                            if (WizardEngine::MetaFile::Load(metaPath, metaData))
+                                            {
+                                                if (!metaData.libraryFile.empty() &&
+                                                    std::filesystem::exists(metaData.libraryFile))
+                                                {
+                                                    PushEnginePrintf("Loading from: %s", metaData.libraryFile.c_str());
+                                                    LoadModelFromAssetBrowser(metaData.libraryFile, &metaData, normalizedPath);
+                                                }
+                                                else
+                                                {
+                                                    PushEngineLog("ERROR: Reimport failed - libraryFile still invalid");
+                                                }
+                                            }
+                                            else
+                                            {
+                                                PushEngineLog("ERROR: Failed to load .meta after reimport");
+                                            }
+                                        }
+                                        else
+                                        {
+                                            PushEngineLog("ERROR: Reimport failed");
+                                        }
+                                    }
+                                }
+                                else if (!std::filesystem::exists(metaData.libraryFile))
+                                {
+                                    PushEnginePrintf("ERROR: Library file missing: %s", metaData.libraryFile.c_str());
                                 }
                                 else
                                 {
-                                    PushEngineLog("Selected object has no material component");
+                                    // Todo OK, cargar el modelo
+                                    PushEnginePrintf("Loading from: %s", metaData.libraryFile.c_str());
+                                    LoadModelFromAssetBrowser(metaData.libraryFile, &metaData, normalizedPath);
                                 }
                             }
                             else
                             {
-                                PushEngineLog("No object selected to apply texture");
+                                PushEngineLog("ERROR: Failed to load .meta file");
+                            }
+                        }
+                    }
+                    // ============================================================
+                    // TEXTURA (PNG, JPG, etc.)
+                    // ============================================================
+                    else if (ext == "png" || ext == "jpg" || ext == "jpeg" ||
+                        ext == "bmp" || ext == "tga" || ext == "dds")
+                    {
+                        PushEngineLog("Loading texture...");
+
+                        bool success = false;
+
+                        // 1. Verificar si ya está importado
+                        std::string metaPath = WizardEngine::MetaFile::GetMetaPath(normalizedPath);
+                        bool needsImport = !std::filesystem::exists(metaPath);
+
+                        // 2. Si no existe meta, importar
+                        if (needsImport)
+                        {
+                            PushEngineLog("Texture not imported, importing now...");
+
+                            if (app.moduleResources)
+                            {
+                                uint64_t uid = app.moduleResources->ImportFile(normalizedPath);
+                                if (uid != 0)
+                                {
+                                    PushEnginePrintf("Texture imported with UID: %llu", uid);
+                                    success = true;
+                                }
+                                else
+                                {
+                                    PushEngineLog("ERROR: Texture import failed");
+                                }
+                            }
+                            else
+                            {
+                                PushEngineLog("ERROR: ModuleResources not available");
+                            }
+                        }
+                        else
+                        {
+                            success = true;
+                        }
+
+                        // 3. Si el import fue exitoso, aplicar la textura
+                        if (success)
+                        {
+                            // Cargar metadata
+                            WizardEngine::AssetMetaData metaData;
+                            if (WizardEngine::MetaFile::Load(metaPath, metaData))
+                            {
+                                // Verificar que libraryFile existe
+                                if (metaData.libraryFile.empty())
+                                {
+                                    PushEngineLog("ERROR: libraryFile is empty in texture .meta");
+                                    PushEngineLog("Trying to reimport...");
+
+                                    if (app.moduleResources)
+                                    {
+                                        uint64_t uid = app.moduleResources->ImportFile(normalizedPath);
+                                        if (uid != 0)
+                                        {
+                                            // Recargar metadata y aplicar
+                                            if (WizardEngine::MetaFile::Load(metaPath, metaData))
+                                            {
+                                                if (!metaData.libraryFile.empty() &&
+                                                    std::filesystem::exists(metaData.libraryFile))
+                                                {
+                                                    // Aplicar textura (código abajo)
+                                                    success = true;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                else if (!std::filesystem::exists(metaData.libraryFile))
+                                {
+                                    PushEnginePrintf("ERROR: Texture library file missing: %s", metaData.libraryFile.c_str());
+                                    success = false;
+                                }
+
+                                // Aplicar textura si todo está OK
+                                if (success && !metaData.libraryFile.empty() &&
+                                    std::filesystem::exists(metaData.libraryFile))
+                                {
+                                    if (app.moduleScene)
+                                    {
+                                        GameObject* selected = app.moduleScene->GetSelectedGameObject();
+                                        if (selected)
+                                        {
+                                            ComponentMaterial* mat = selected->GetComponent<ComponentMaterial>();
+                                            if (mat)
+                                            {
+                                                // Cargar textura desde .wzt
+                                                PushEnginePrintf("Loading texture from: %s", metaData.libraryFile.c_str());
+
+                                                WizardEngine::WizardTextureData texData;
+                                                if (WizardEngine::TextureImporter::Load(metaData.libraryFile, texData))
+                                                {
+                                                    // Crear textura OpenGL
+                                                    GLuint texID;
+                                                    glGenTextures(1, &texID);
+                                                    glBindTexture(GL_TEXTURE_2D, texID);
+
+                                                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                                                        texData.width, texData.height, 0,
+                                                        GL_RGBA, GL_UNSIGNED_BYTE, texData.data.data());
+
+                                                    glGenerateMipmap(GL_TEXTURE_2D);
+                                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+                                                    mat->SetTexture(texID, normalizedPath.c_str(), texData.channels);
+
+                                                    PushEnginePrintf("✓ Texture applied to '%s'", selected->GetName());
+                                                }
+                                                else
+                                                {
+                                                    PushEngineLog("ERROR: Failed to load .wzt file");
+                                                }
+                                            }
+                                            else
+                                            {
+                                                PushEnginePrintf("GameObject '%s' has no Material component", selected->GetName());
+                                            }
+                                        }
+                                        else
+                                        {
+                                            PushEngineLog("No GameObject selected to apply texture");
+                                            PushEngineLog("Select an object first, then drag the texture");
+                                        }
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                PushEngineLog("ERROR: Failed to load texture .meta file");
                             }
                         }
                     }
@@ -2253,6 +2422,13 @@ void ModuleEditor::LoadModelFromAssetBrowser(const std::string& libraryPath, Wiz
         return;
     }
 
+    // Verificar que el archivo existe
+    if (!std::filesystem::exists(libraryPath))
+    {
+        ModuleEditor::PushEnginePrintf("ERROR: Library file does not exist: %s", libraryPath.c_str());
+        return;
+    }
+
     ModuleEditor::PushEnginePrintf("Loading model from library: %s", libraryPath.c_str());
 
     // Cargar el modelo custom format
@@ -2260,6 +2436,14 @@ void ModuleEditor::LoadModelFromAssetBrowser(const std::string& libraryPath, Wiz
     if (!WizardEngine::ModelImporter::Load(libraryPath, modelData))
     {
         ModuleEditor::PushEngineLog("ERROR: Failed to load WZD file");
+        ModuleEditor::PushEngineLog("Tip: Try reimporting the asset from the Inspector");
+        return;
+    }
+
+    // Verificar que el modelo tiene meshes
+    if (modelData.meshes.empty())
+    {
+        ModuleEditor::PushEngineLog("ERROR: Model has no meshes");
         return;
     }
 
@@ -2286,15 +2470,18 @@ void ModuleEditor::LoadModelFromAssetBrowser(const std::string& libraryPath, Wiz
             rootTransform->SetRotation(glm::quat(glm::radians(metaData->importRotation)));
             rootTransform->SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
 
-            ModuleEditor::PushEnginePrintf("Applied import scale: (%.2f, %.2f, %.2f)",
+            ModuleEditor::PushEnginePrintf("Applied import settings:");
+            ModuleEditor::PushEnginePrintf("  Scale: (%.2f, %.2f, %.2f)",
                 metaData->importScale.x, metaData->importScale.y, metaData->importScale.z);
+            ModuleEditor::PushEnginePrintf("  Rotation: (%.2f, %.2f, %.2f)",
+                metaData->importRotation.x, metaData->importRotation.y, metaData->importRotation.z);
         }
         else
         {
             rootTransform->SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
             rootTransform->SetScale(glm::vec3(1.0f, 1.0f, 1.0f));
             rootTransform->SetRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
-            ModuleEditor::PushEngineLog("No metadata, using default transform");
+            ModuleEditor::PushEngineLog("No metadata found, using default transform");
         }
     }
 
@@ -2398,7 +2585,7 @@ void ModuleEditor::LoadModelFromAssetBrowser(const std::string& libraryPath, Wiz
     // Seleccionar el modelo cargado
     app.moduleScene->SetSelectedGameObject(modelRoot);
 
-    ModuleEditor::PushEnginePrintf("Model loaded successfully: %s (%d meshes)",
+    ModuleEditor::PushEnginePrintf("✓ Model loaded successfully: %s (%d meshes)",
         modelName.c_str(), meshCount);
 }
 

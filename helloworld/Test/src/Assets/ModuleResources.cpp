@@ -79,14 +79,29 @@ namespace WizardEngine {
     }
 
     uint64_t ModuleResources::ImportFile(const std::string& newFileInAssets) {
-        std::cout << "[ModuleResources] Importing: " << newFileInAssets << std::endl;
+        std::cout << "[ModuleResources] ImportFile called: " << newFileInAssets << std::endl;
 
         // Check if already exists
         uint64_t existingUID = Find(newFileInAssets);
         if (existingUID != 0) {
             std::cout << "[ModuleResources] File already imported with UID: "
                 << existingUID << std::endl;
-            return existingUID;
+
+            // Verificar si tiene libraryFile válido
+            auto info = GetResourceInfo(existingUID);
+            if (info.libraryPath.empty()) {
+                std::cout << "[ModuleResources] WARNING: Resource has empty libraryPath, forcing reimport" << std::endl;
+                // Forzar reimport borrando del caché
+                auto it = resources.find(existingUID);
+                if (it != resources.end()) {
+                    delete it->second;
+                    resources.erase(it);
+                }
+                pathToUID.erase(newFileInAssets);
+            }
+            else {
+                return existingUID;
+            }
         }
 
         if (!assetManager) {
@@ -94,16 +109,38 @@ namespace WizardEngine {
             return 0;
         }
 
+        std::cout << "[ModuleResources] Processing asset..." << std::endl;
+
         // Process with AssetManager (this creates .meta and Library files)
         if (!assetManager->ProcessAssetFile(newFileInAssets)) {
             std::cerr << "[ModuleResources] Failed to process asset" << std::endl;
             return 0;
         }
 
+        std::cout << "[ModuleResources] Asset processed successfully" << std::endl;
+
         // Get meta data
         AssetMetaData* metaData = assetManager->GetMetaData(newFileInAssets);
         if (!metaData) {
             std::cerr << "[ModuleResources] Failed to get meta data" << std::endl;
+            return 0;
+        }
+
+        std::cout << "[ModuleResources] MetaData loaded:" << std::endl;
+        std::cout << "  - UUID: " << metaData->uuid << std::endl;
+        std::cout << "  - Type: " << metaData->assetType << std::endl;
+        std::cout << "  - Library: " << metaData->libraryFile << std::endl;
+
+        // Verificar que libraryFile no esté vacío
+        if (metaData->libraryFile.empty()) {
+            std::cerr << "[ModuleResources] ERROR: libraryFile is EMPTY after processing!" << std::endl;
+            return 0;
+        }
+
+        // Verificar que el archivo de Library existe
+        if (!std::filesystem::exists(metaData->libraryFile)) {
+            std::cerr << "[ModuleResources] ERROR: Library file does not exist: "
+                << metaData->libraryFile << std::endl;
             return 0;
         }
 
@@ -117,10 +154,14 @@ namespace WizardEngine {
             return 0;
         }
 
+        std::cout << "[ModuleResources] UID generated: " << uid << std::endl;
+
         // Determine resource type
         std::string ext = std::filesystem::path(newFileInAssets).extension().string();
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         ResourceType type = GetResourceTypeFromExtension(ext);
+
+        std::cout << "[ModuleResources] Resource type: " << (int)type << std::endl;
 
         // Create Resource entry
         Resource* resource = nullptr;
@@ -128,12 +169,15 @@ namespace WizardEngine {
         switch (type) {
         case ResourceType::TEXTURE:
             resource = new ResourceTexture(uid);
+            std::cout << "[ModuleResources] Created ResourceTexture" << std::endl;
             break;
         case ResourceType::MESH:
             resource = new ResourceMesh(uid);
+            std::cout << "[ModuleResources] Created ResourceMesh" << std::endl;
             break;
         case ResourceType::MODEL:
             resource = new ResourceModel(uid);
+            std::cout << "[ModuleResources] Created ResourceModel" << std::endl;
             break;
         default:
             std::cerr << "[ModuleResources] Unsupported resource type" << std::endl;
@@ -151,7 +195,11 @@ namespace WizardEngine {
         resources[uid] = resource;
         pathToUID[newFileInAssets] = uid;
 
-        std::cout << "[ModuleResources] Imported successfully with UID: " << uid << std::endl;
+        std::cout << "[ModuleResources] Import completed successfully!" << std::endl;
+        std::cout << "[ModuleResources]   Asset: " << newFileInAssets << std::endl;
+        std::cout << "[ModuleResources]   Library: " << metaData->libraryFile << std::endl;
+        std::cout << "[ModuleResources]   UID: " << uid << std::endl;
+
         return uid;
     }
 
