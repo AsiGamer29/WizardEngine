@@ -41,6 +41,8 @@ We have implemented an asset manager: In the engine you can now see all the fold
 
 Selecting GameObjects in the Hierarchy window lets you modify values such as texture, position, rotation and scale.
 
+Now we have 3 buttons up in the viewport, that let's us play pause and stop the scene.
+
 ### Resource Manager ###
 We have files with unique format(.wzd). They change depending on the source(if its a texture.wzt, if its a model .wzm etc...).
 
