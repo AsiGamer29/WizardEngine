@@ -3,6 +3,7 @@
 #include "ComponentTransform.h"
 #include "ComponentMesh.h"
 #include "ComponentMaterial.h"
+#include "ComponentCamera.h"
 #include "AABB.h"
 #include "Texture.h"
 #include "Ray.h"
@@ -72,6 +73,15 @@ Component* GameObject::CreateComponent(ComponentType type)
         break;
     case ComponentType::MATERIAL:
         newComp = new ComponentMaterial(this);
+        break;
+    case ComponentType::CAMERA:
+        // Solo permitir una cámara por GameObject
+        if (GetComponent<ComponentCamera>() != nullptr)
+        {
+            std::cerr << "GameObject already has a Camera component!" << std::endl;
+            return nullptr;
+        }
+        newComp = new ComponentCamera(this);
         break;
     default:
         return nullptr;
@@ -201,14 +211,11 @@ bool GameObject::IntersectRay(const Ray& ray, RayHit& hit)
     return false;
 }
 
-// ============================================
-// SERIALIZATION
-// ============================================
+
 
 nlohmann::json GameObject::Serialize() const
 {
     nlohmann::json j;
-
     j["UID"] = uuid.GetValue();
     j["Name"] = name;
     j["Active"] = active;
@@ -230,7 +237,6 @@ nlohmann::json GameObject::Serialize() const
         glm::vec3 pos = transform->GetPosition();
         glm::vec3 scale = transform->GetScale();
         glm::quat rot = transform->GetRotation();
-
         j["Translation"] = { pos.x, pos.y, pos.z };
         j["Scale"] = { scale.x, scale.y, scale.z };
         j["Rotation"] = { rot.w, rot.x, rot.y, rot.z };
@@ -251,22 +257,17 @@ nlohmann::json GameObject::Serialize() const
             compJson["Type"] = "Mesh";
 
             std::string sourcePath = mesh->GetSourceAssetPath();
-
             std::cout << "[GameObject::Serialize] Mesh for '" << name << "'" << std::endl;
             std::cout << "  SourceAssetPath: " << (sourcePath.empty() ? "(empty)" : sourcePath) << std::endl;
 
             // ESTRATEGIA DUAL: Guardar AMBOS - referencia Y datos
-            // Esto asegura compatibilidad y recuperación ante errores
-
             if (!sourcePath.empty() && std::filesystem::exists(sourcePath))
             {
-                // Guardar referencia al archivo .wzm
                 compJson["SourceAssetPath"] = sourcePath;
                 std::cout << "  -> Saved reference to: " << sourcePath << std::endl;
             }
 
             // SIEMPRE guardar también la geometría como backup
-            // Esto permite cargar la escena incluso si los archivos .wzm se mueven
             if (mesh->GetVertexCount() > 0)
             {
                 compJson["MeshData"] = mesh->SerializeMesh();
@@ -292,7 +293,28 @@ nlohmann::json GameObject::Serialize() const
             compJson["AlphaCutoff"] = mat->GetAlphaCutoff();
             compJson["BlendMode"] = (int)mat->GetBlendMode();
         }
+        else if (comp->GetType() == ComponentType::CAMERA)
+        {
+            ComponentCamera* cam = static_cast<ComponentCamera*>(comp);
+            compJson["Type"] = "Camera";
 
+            std::cout << "[GameObject::Serialize] Camera for '" << name << "'" << std::endl;
+
+            // Guardar todas las propiedades de la cámara
+            compJson["FOV"] = cam->GetFOV();
+            compJson["NearPlane"] = cam->GetNearPlane();
+            compJson["FarPlane"] = cam->GetFarPlane();
+            compJson["ProjectionMode"] = (int)cam->GetProjectionMode();
+            compJson["OrthoSize"] = cam->GetOrthoSize();
+            compJson["IsMainCamera"] = cam->IsMainCamera();
+
+            glm::vec3 bgColor = cam->GetBackgroundColor();
+            compJson["BackgroundColor"] = { bgColor.r, bgColor.g, bgColor.b };
+
+            std::cout << "  -> Camera saved (Main: " << (cam->IsMainCamera() ? "Yes" : "No") << ")" << std::endl;
+        }
+
+        // Añadir al array solo si tiene contenido
         if (!compJson.empty())
         {
             componentsArray.push_back(compJson);
@@ -300,7 +322,6 @@ nlohmann::json GameObject::Serialize() const
     }
 
     j["Components"] = componentsArray;
-
     return j;
 }
 
@@ -476,6 +497,63 @@ void GameObject::Deserialize(const nlohmann::json& json)
                     }
                 }
             }
+            else if (type == "Camera")
+            {
+                std::cout << "\n[GameObject::Deserialize] Loading Camera for: " << name << std::endl;
+
+                ComponentCamera* cam = GetComponent<ComponentCamera>();
+                if (!cam)
+                {
+                    cam = static_cast<ComponentCamera*>(CreateComponent(ComponentType::CAMERA));
+                }
+
+                if (!cam)
+                {
+                    std::cerr << "  ERROR: Failed to create ComponentCamera!" << std::endl;
+                    continue;
+                }
+
+                // Cargar propiedades de la cámara
+                if (compJson.contains("FOV"))
+                {
+                    cam->SetFOV(compJson["FOV"].get<float>());
+                }
+
+                if (compJson.contains("NearPlane"))
+                {
+                    cam->SetNearPlane(compJson["NearPlane"].get<float>());
+                }
+
+                if (compJson.contains("FarPlane"))
+                {
+                    cam->SetFarPlane(compJson["FarPlane"].get<float>());
+                }
+
+                if (compJson.contains("ProjectionMode"))
+                {
+                    int mode = compJson["ProjectionMode"].get<int>();
+                    cam->SetProjectionMode((ComponentCamera::ProjectionMode)mode);
+                }
+
+                if (compJson.contains("OrthoSize"))
+                {
+                    cam->SetOrthoSize(compJson["OrthoSize"].get<float>());
+                }
+
+                if (compJson.contains("IsMainCamera"))
+                {
+                    cam->SetMainCamera(compJson["IsMainCamera"].get<bool>());
+                }
+
+                if (compJson.contains("BackgroundColor"))
+                {
+                    auto bgColor = compJson["BackgroundColor"];
+                    cam->SetBackgroundColor(glm::vec3(bgColor[0], bgColor[1], bgColor[2]));
+                }
+
+                std::cout << "  Camera loaded successfully" << std::endl;
+            }
+            
         }
     }
 }

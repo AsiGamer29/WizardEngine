@@ -20,6 +20,7 @@
 #include "GameObject.h"
 #include "ComponentMesh.h"
 #include "ComponentMaterial.h"
+#include "ComponentCamera.h"
 #include "ModuleScene.h"
 #include "Texture.h"
 #include "ModelImporter.h"
@@ -187,8 +188,79 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
 
         ImGui::Text("GameObject: %s", go->GetName());
         ImGui::Separator();
+        if (ImGui::MenuItem("Camera"))
+        {
+            auto& app = Application::GetInstance();
+            if (app.moduleScene)
+            {
+                static int cameraCounter = 0;
+                std::string cameraName = "Camera_" + std::to_string(++cameraCounter);
 
-        if (ImGui::MenuItem("Duplicate", "Ctrl+D"))
+                GameObject* cameraObj = app.moduleScene->CreateGameObject(
+                    cameraName.c_str(),
+                    app.moduleScene->GetRoot()
+                );
+
+                if (cameraObj)
+                {
+                    // Crear el componente Camera
+                    ComponentCamera* camComp = static_cast<ComponentCamera*>(
+                        cameraObj->CreateComponent(ComponentType::CAMERA)
+                        );
+
+                    if (camComp)
+                    {
+                        // Configurar posición inicial
+                        ComponentTransform* transform = cameraObj->GetComponent<ComponentTransform>();
+                        if (transform)
+                        {
+                            // Posición típica de cámara (atrás y arriba)
+                            transform->SetPosition(glm::vec3(0.0f, 2.0f, 5.0f));
+
+                            // Rotar para mirar hacia el origen
+                            glm::vec3 forward = glm::normalize(glm::vec3(0.0f, -2.0f, -5.0f));
+                            glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+                            glm::quat lookRotation = glm::quatLookAt(forward, up);
+                            transform->SetRotation(lookRotation);
+                        }
+
+                        // Si es la primera cámara, marcarla como principal
+                        bool hasOtherCameras = false;
+                        for (GameObject* go : app.moduleScene->GetAllGameObjects())
+                        {
+                            if (go != cameraObj && go->GetComponent<ComponentCamera>())
+                            {
+                                hasOtherCameras = true;
+                                break;
+                            }
+                        }
+
+                        if (!hasOtherCameras)
+                        {
+                            camComp->SetMainCamera(true);
+                            ModuleEditor::PushEnginePrintf("Camera created: %s [MAIN CAMERA]", cameraName.c_str());
+                        }
+                        else
+                        {
+                            ModuleEditor::PushEnginePrintf("Camera created: %s", cameraName.c_str());
+                        }
+                    }
+                    else
+                    {
+                        ModuleEditor::PushEngineLog("ERROR: Failed to create Camera component");
+                    }
+                }
+                else
+                {
+                    ModuleEditor::PushEngineLog("ERROR: Failed to create Camera GameObject");
+                }
+            }
+        }
+        ImGui::Separator();
+        auto& app = Application::GetInstance();
+        GameObject* selected = app.moduleScene ? app.moduleScene->GetSelectedGameObject() : nullptr;
+
+        if (ImGui::MenuItem("Duplicate Selected", "Ctrl+D", false, selected != nullptr))
         {
             if (app.moduleScene)
             {
@@ -224,6 +296,7 @@ static void DrawGameObjectNode(GameObject* go, Application& app)
         }
 
         ImGui::Separator();
+
 
         if (ImGui::MenuItem("Create Empty Child"))
         {
@@ -582,6 +655,7 @@ bool ModuleEditor::Update()
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::BeginMenu("File"))
+
         {
             if (ImGui::MenuItem("Save Scene", "Ctrl+S"))
             {
@@ -698,6 +772,59 @@ bool ModuleEditor::Update()
 
         if (ImGui::BeginMenu("GameObject"))
         {
+            if (ImGui::MenuItem("Camera"))
+            {
+                auto& app = Application::GetInstance();
+                if (app.moduleScene)
+                {
+                    static int cameraCounter = 0;
+                    std::string cameraName = "Camera_" + std::to_string(++cameraCounter);
+
+                    GameObject* cameraObj = app.moduleScene->CreateGameObject(
+                        cameraName.c_str(),
+                        app.moduleScene->GetRoot()
+                    );
+
+                    if (cameraObj)
+                    {
+                        Component* comp = cameraObj->CreateComponent(ComponentType::CAMERA);
+
+                        if (comp)
+                        {
+                            ComponentCamera* camComp = dynamic_cast<ComponentCamera*>(comp);
+
+                            if (camComp)
+                            {
+                                ComponentTransform* transform = cameraObj->GetComponent<ComponentTransform>();
+                                if (transform)
+                                {
+                                    transform->SetPosition(glm::vec3(0.0f, 2.0f, 5.0f));
+                                }
+
+                                camComp->SetMainCamera(true);
+
+                                PushEnginePrintf("Camera created: %s", cameraName.c_str());
+                            }
+                            else
+                            {
+                                PushEngineLog("ERROR: Dynamic cast failed!");
+                            }
+                        }
+                        else
+                        {
+                            PushEngineLog("ERROR: CreateComponent returned null!");
+                        }
+                    }
+                    else
+                    {
+                        PushEngineLog("ERROR: CreateGameObject failed!");
+                    }
+                }
+                else
+                {
+                    PushEngineLog("ERROR: ModuleScene is null!");
+                }
+            }
             if (ImGui::MenuItem("Create Empty"))
             {
                 CreateEmptyGameObject();
@@ -899,19 +1026,45 @@ bool ModuleEditor::Update()
             {
                 glBindFramebuffer(GL_FRAMEBUFFER, sceneFramebuffer);
                 glViewport(0, 0, sceneFBWidth, sceneFBHeight);
-                glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
                 auto& app = Application::GetInstance();
-                if (app.camera && sceneFBWidth > 0 && sceneFBHeight > 0)
+
+                // MODO PLAY: USAR COMPONENTCAMERA
+                if (simulationState == SimulationState::PLAYING && activeGameCamera)
                 {
-                    float aspect = (float)sceneFBWidth / (float)sceneFBHeight;
-                    app.camera->setProjection(45.0f, aspect, 0.1f, 1000.0f);
+                    if (sceneFBWidth > 0 && sceneFBHeight > 0)
+                    {
+                        float aspect = (float)sceneFBWidth / (float)sceneFBHeight;
+                        activeGameCamera->SetAspectRatio(aspect);
+                    }
+
+                    glm::mat4 view = activeGameCamera->GetViewMatrix();
+                    glm::mat4 projection = activeGameCamera->GetProjectionMatrix();
+
+                    glm::vec3 bgColor = activeGameCamera->GetBackgroundColor();
+                    glClearColor(bgColor.r, bgColor.g, bgColor.b, 1.0f);
+                    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+                    
+                    RenderSceneWithCustomCamera(view, projection);
+                }
+                // MODO EDITOR: USAR CÁMARA LIBRE
+                else
+                {
+                    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+                    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+                    if (app.camera && sceneFBWidth > 0 && sceneFBHeight > 0)
+                    {
+                        float aspect = (float)sceneFBWidth / (float)sceneFBHeight;
+                        app.camera->setProjection(45.0f, aspect, 0.1f, 1000.0f);
+                    }
+
+                    app.moduleScene->RenderScene();
                 }
 
-                Application::GetInstance().moduleScene->RenderScene();
                 glBindFramebuffer(GL_FRAMEBUFFER, 0);
             }
+
 
             ImVec2 imagePos = ImGui::GetCursorScreenPos();
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -3628,11 +3781,23 @@ void ModuleEditor::StartSimulation()
     // Guardar el estado actual de la escena
     SaveSceneState();
 
+    // Buscar y activar la cámara del juego
+    UpdateActiveGameCamera();
+
     // Cambiar al estado de reproducción
     simulationState = SimulationState::PLAYING;
-    
+
     PushEngineLog("========================================");
     PushEngineLog("Simulation started");
+    if (activeGameCamera)
+    {
+        GameObject* camOwner = activeGameCamera->GetOwner();
+        PushEnginePrintf("Using game camera: %s", camOwner ? camOwner->GetName() : "Unknown");
+    }
+    else
+    {
+        PushEngineLog("WARNING: No game camera found, using editor camera");
+    }
     PushEngineLog("========================================");
 }
 
@@ -3651,10 +3816,14 @@ void ModuleEditor::StopSimulation()
     // Restaurar el estado guardado de la escena
     RestoreSceneState();
 
+    // Limpiar referencia a la cámara del juego
+    activeGameCamera = nullptr;
+
     simulationState = SimulationState::STOPPED;
-    
+
     PushEngineLog("========================================");
     PushEngineLog("Simulation stopped - Scene restored");
+    PushEngineLog("Returning to editor camera");
     PushEngineLog("========================================");
 }
 
@@ -3723,5 +3892,108 @@ void ModuleEditor::DeleteAsset(const std::string& assetPath)
     }
     catch (const std::exception& e) {
         PushEnginePrintf("ERROR deleting asset: %s", e.what());
+    }
+}
+void ModuleEditor::UpdateActiveGameCamera()
+{
+    activeGameCamera = nullptr;
+
+    auto& app = Application::GetInstance();
+    if (!app.moduleScene)
+        return;
+
+    // Buscar la primera cámara marcada como "Main Camera"
+    const auto& allGameObjects = app.moduleScene->GetAllGameObjects();
+
+    for (GameObject* go : allGameObjects)
+    {
+        if (!go || !go->IsActive())
+            continue;
+
+        ComponentCamera* cam = go->GetComponent<ComponentCamera>();
+        if (cam && cam->IsActive() && cam->IsMainCamera())
+        {
+            activeGameCamera = cam;
+            PushEnginePrintf("Active game camera: %s", go->GetName());
+            return;
+        }
+    }
+
+    if (!activeGameCamera)
+    {
+        PushEngineLog("WARNING: No main camera found in scene! Using editor camera.");
+    }
+}
+
+void ModuleEditor::RenderSceneWithCustomCamera(const glm::mat4& view, const glm::mat4& projection)
+{
+    auto& app = Application::GetInstance();
+    if (!app.moduleScene || !app.opengl)
+        return;
+
+    // Configurar OpenGL
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+
+   
+    Shader* shader = app.opengl->GetShader();  
+    if (!shader)
+        return;
+
+    shader->use();
+
+    // Configurar luz
+    glm::vec3 lightPos(2.0f, 2.0f, 2.0f);
+    glm::vec3 lightColor(1.0f);
+
+    GLuint shaderID = shader->ID;
+    glUniform3fv(glGetUniformLocation(shaderID, "lightPos"), 1, &lightPos[0]);
+    glUniform3fv(glGetUniformLocation(shaderID, "lightColor"), 1, &lightColor[0]);
+
+    
+    GLint viewLoc = glGetUniformLocation(shaderID, "view");
+    GLint projLoc = glGetUniformLocation(shaderID, "projection");
+
+    if (viewLoc != -1) glUniformMatrix4fv(viewLoc, 1, GL_FALSE, &view[0][0]);
+    if (projLoc != -1) glUniformMatrix4fv(projLoc, 1, GL_FALSE, &projection[0][0]);
+
+    // Renderizar cada objeto
+    const auto& allGameObjects = app.moduleScene->GetAllGameObjects();
+
+    for (GameObject* obj : allGameObjects)
+    {
+        if (!obj || !obj->IsActive())
+            continue;
+
+        ComponentMesh* mesh = obj->GetComponent<ComponentMesh>();
+        ComponentMaterial* material = obj->GetComponent<ComponentMaterial>();
+        ComponentTransform* transform = obj->GetComponent<ComponentTransform>();
+
+        if (!mesh || !material || !transform)
+            continue;
+
+        // Setup model matrix
+        glm::mat4 model = transform->GetGlobalMatrix();
+        GLint modelLoc = glGetUniformLocation(shaderID, "model");
+
+        if (modelLoc != -1)
+            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, &model[0][0]);
+
+        // Bind texture
+        material->Bind();
+
+        // Draw mesh
+        mesh->Draw();
+
+        material->Unbind();
+    }
+
+    // ✅ RENDERIZAR GRID también
+    if (app.opengl->showGrid)
+    {
+        app.opengl->SetCustomViewProjection(view, projection);
+        app.opengl->DrawGrid();
+        app.opengl->ClearCustomViewProjection();
     }
 }

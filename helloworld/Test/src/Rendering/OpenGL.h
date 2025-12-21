@@ -51,6 +51,9 @@ private:
 
     GLuint sceneFBO, sceneTexture, sceneRBO;
     int sceneWidth = 1280, sceneHeight = 720;
+    bool useCustomViewProjection = false;
+    glm::mat4 customView;
+    glm::mat4 customProjection;
 
 public:
     OpenGL();
@@ -86,4 +89,7 @@ public:
     // Métodos de visualización AABB
     void DrawAABB(const AABB& aabb, const glm::vec3& color = glm::vec3(0.0f, 1.0f, 0.0f));
     void DrawGameObjectsWithAABB(GameObject* go);
+    void SetCustomViewProjection(const glm::mat4& view, const glm::mat4& projection);
+    void ClearCustomViewProjection();
+    Shader* GetShader() const { return shader; }
 };

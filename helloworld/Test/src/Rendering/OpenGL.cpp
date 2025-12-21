@@ -90,8 +90,21 @@ void OpenGL::DrawGrid()
     Application& app = Application::GetInstance();
 
     glm::mat4 model = glm::mat4(1.0f);
-    glm::mat4 view = app.camera->getViewMatrix();
-    glm::mat4 projection = app.camera->getProjectionMatrix();
+    glm::mat4 view, projection;
+
+    if (useCustomViewProjection)
+    {
+        view = customView;
+        projection = customProjection;
+    }
+    else
+    {
+        if (app.camera)
+        {
+            view = app.camera->getViewMatrix();
+            projection = app.camera->getProjectionMatrix();
+        }
+    }
 
     glUniformMatrix4fv(glGetUniformLocation(gridShader->ID, "model"), 1, GL_FALSE, glm::value_ptr(model));
     glUniformMatrix4fv(glGetUniformLocation(gridShader->ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
@@ -829,4 +842,15 @@ void OpenGL::DrawGameObjectsWithAABB(GameObject* go)
     {
         DrawGameObjectsWithAABB(child);
     }
+}
+void OpenGL::SetCustomViewProjection(const glm::mat4& view, const glm::mat4& projection)
+{
+    useCustomViewProjection = true;
+    customView = view;
+    customProjection = projection;
+}
+
+void OpenGL::ClearCustomViewProjection()
+{
+    useCustomViewProjection = false;
 }

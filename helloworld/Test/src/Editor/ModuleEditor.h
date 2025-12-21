@@ -3,6 +3,7 @@
 #include "MetaFile.h"
 #include "Resource.h"
 #include "ModuleResources.h"
+#include "ComponentCamera.h"
 #include "imgui.h"
 #include <glad/glad.h>
 #include <string>
@@ -47,6 +48,9 @@ private:
     bool show_inspector_window = true;
     bool show_asset_browser = true;
     bool show_config_resources = false;
+   ComponentCamera* activeGameCamera = nullptr;
+   void UpdateActiveGameCamera();
+   void RenderSceneWithCustomCamera(const glm::mat4& view, const glm::mat4& projection);
 
     // Simulation control
     enum class SimulationState
